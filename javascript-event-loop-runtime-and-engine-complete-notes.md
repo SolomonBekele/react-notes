@@ -7,12 +7,6 @@ This document turns two lessons from the *Namaste JavaScript* series into one st
 1. **The Event Loop lesson**: how a language with a single call stack still handles timers, button clicks, and network requests without freezing. It covers the call stack, Web APIs, the callback queue, the microtask queue, and the event loop that coordinates them.
 2. **The JavaScript Runtime and Engine lesson**: what a "JavaScript runtime environment" is, why JavaScript runs in browsers, servers, and even smart devices, and what happens inside a JavaScript engine (parsing, the AST, JIT compilation, the memory heap, garbage collection, and Google's V8).
 
-Together they answer a question that appears in many interviews: *"What actually happens when JavaScript code runs?"*
-
-> **How to read the labels in this document**
-> - **From the transcript**: material the instructor presented.
-> - **Supplementary**: added by the note-writer to clarify or correct. These are not claims made by the instructor.
-> - **Reconstructed**: the transcript describes the code aloud but the code itself is not visible, so the code shown is reconstructed from the narration.
 
 ## Learning Objectives
 
@@ -98,7 +92,7 @@ The rest of Part I builds this answer step by step.
 
 ### 2.1 Definition
 
-**From the transcript:** JavaScript is a **synchronous, single-threaded** language. It has **one call stack** and can only do **one thing at a time**. The call stack lives inside the JavaScript engine, and all JavaScript code is executed there.
+JavaScript is a **synchronous, single-threaded** language. It has **one call stack** and can only do **one thing at a time**. The call stack lives inside the JavaScript engine, and all JavaScript code is executed there.
 
 - **Synchronous**: statements run in order, one after another.
 - **Single-threaded**: only one piece of code is executing at any instant.
@@ -110,8 +104,6 @@ The call stack is the *only* place where JavaScript code executes. Every asynchr
 
 ### 2.3 How it works
 
-**From the transcript**, step by step:
-
 1. Whenever a JavaScript program runs, a **Global Execution Context (GEC)** is created and **pushed onto the call stack**.
 2. Code inside the global context runs **line by line**.
 3. A **function definition** only allocates memory and stores the function. Nothing runs yet.
@@ -122,7 +114,7 @@ The call stack is the *only* place where JavaScript code executes. Every asynchr
 
 The transcript summarizes the stack's character: its job is to execute whatever comes into it, **immediately, without waiting for anything**. The instructor's catchphrase: *"Time, tide, and JavaScript wait for none."*
 
-### 2.4 Example from the transcript (reconstructed)
+### 2.4 Example (reconstructed)
 
 The narration describes a function `a` that logs `"a"`, a call to `a()`, and then a `console.log("end")`.
 
@@ -171,7 +163,7 @@ Step 3                 Step 4-5               Step 7
 
 ### 3.1 The problem
 
-**From the transcript:** What if we want to run a script **after 5 seconds**? The call stack cannot do it, because anything that arrives in the stack is executed immediately, and **the call stack has no timer**.
+What if we want to run a script **after 5 seconds**? The call stack cannot do it, because anything that arrives in the stack is executed immediately, and **the call stack has no timer**.
 
 More generally, the call stack cannot, by itself:
 
@@ -184,7 +176,7 @@ To get these abilities, JavaScript code needs "superpowers" that live **outside*
 
 ### 3.2 Where the engine lives
 
-**From the transcript:** the call stack is inside the **JavaScript engine**, and the engine is inside the **browser** (the "big red box" in the instructor's diagram). The browser is much more than an engine. It also has:
+the call stack is inside the **JavaScript engine**, and the engine is inside the **browser** (the "big red box" in the instructor's diagram). The browser is much more than an engine. It also has:
 
 - **Local storage** for saving data.
 - **Timers**.
@@ -228,13 +220,13 @@ flowchart TB
 
 ### 4.2 A surprising fact
 
-**From the transcript:** `setTimeout` is **not part of JavaScript**. Neither are the DOM APIs, `fetch`, `localStorage`, or even `console.log`. They belong to the **browser** (the host environment), which hands them to the JavaScript engine.
+`setTimeout` is **not part of JavaScript**. Neither are the DOM APIs, `fetch`, `localStorage`, or even `console.log`. They belong to the **browser** (the host environment), which hands them to the JavaScript engine.
 
 > **Supplementary clarification:** The language specification (ECMAScript) defines things such as variables, functions, objects, arrays, and promises. Timers, the DOM, `fetch`, and `console` are defined by host environments (browsers, Node.js) and by web standards. Environments are free to provide them, and they largely agree on names like `setTimeout` and `console.log`, which is why they feel like part of the language.
 
 ### 4.3 The global object: `window`
 
-**From the transcript:** browsers give the engine access to these superpowers through the **global object**. In a browser, the global object is **`window`**. The browser wraps all the Web APIs into `window` and gives it to the call stack's code.
+browsers give the engine access to these superpowers through the **global object**. In a browser, the global object is **`window`**. The browser wraps all the Web APIs into `window` and gives it to the call stack's code.
 
 So these are all the same thing:
 
@@ -326,8 +318,6 @@ sequenceDiagram
 
 ### 6.1 Definition
 
-**From the transcript:**
-
 - **Callback queue**: a waiting line for callback functions that are ready to run. Callbacks cannot go straight onto the call stack, so they wait here.
 - **Event loop**: a process whose **only job** is to **continuously monitor the call stack and the callback queue**. When the call stack is **empty** and there is a function waiting in the callback queue, it takes that function and **pushes it onto the call stack**, where it runs immediately. The instructor compares it to a **gatekeeper**.
 
@@ -337,7 +327,7 @@ The call stack executes whatever it receives, instantly. Without a controlled en
 
 ### 6.3 Why do we need a queue at all?
 
-**From the transcript:** Couldn't the event loop just push a callback onto the stack whenever it is empty, with no queue? No. Imagine a user clicks a button 7 or 8 times quickly. Five or six callbacks become ready at nearly the same moment. They need to **line up** and get their turn one after another, because there is only one call stack. Real applications have many timers and event listeners active at once, so a queue is essential.
+Couldn't the event loop just push a callback onto the stack whenever it is empty, with no queue? No. Imagine a user clicks a button 7 or 8 times quickly. Five or six callbacks become ready at nearly the same moment. They need to **line up** and get their turn one after another, because there is only one call stack. Real applications have many timers and event listeners active at once, so a queue is essential.
 
 ### 6.4 The mental model so far
 
@@ -409,11 +399,11 @@ callback        <- each time the button is clicked
 
 ### 8.1 Why fetch is different
 
-**From the transcript:** `fetch` is *"an interesting case"*. It does not follow the same path as `setTimeout` or event listeners. `fetch` makes a network request and **returns a promise**. You pass a callback that runs **once the promise is resolved**, meaning once the data has arrived. (The instructor notes promises have not been covered yet in the series.)
+`fetch` is *"an interesting case"*. It does not follow the same path as `setTimeout` or event listeners. `fetch` makes a network request and **returns a promise**. You pass a callback that runs **once the promise is resolved**, meaning once the data has arrived. (The instructor notes promises have not been covered yet in the series.)
 
 ### 8.2 Definition: the microtask queue
 
-**From the transcript:** The **microtask queue** is exactly like the callback queue, but with **higher priority**. Functions in it are executed **first**; functions in the callback queue are executed later. Callbacks from **promises** (such as fetch's) go into the microtask queue.
+The **microtask queue** is exactly like the callback queue, but with **higher priority**. Functions in it are executed **first**; functions in the callback queue are executed later. Callbacks from **promises** (such as fetch's) go into the microtask queue.
 
 ### 8.3 Mini-introduction to promises (supplementary)
 
@@ -476,7 +466,7 @@ CB setTimeout
 
 > If the request fails (for example, you are offline), the `.then` callback will not run. Add `.catch(console.error)` to see the error.
 
-### 8.6 Step-by-step trace (from the transcript)
+### 8.6 Step-by-step trace
 
 1. **GEC pushed**; `console.log("start")` prints `start`.
 2. `setTimeout` **registers `cbT`** in the Web API environment and **starts the 5000 ms timer**.
@@ -502,7 +492,7 @@ CB setTimeout
 
 ### 8.8 Key insight: the browser does many things, the engine does one
 
-**From the transcript:** *"The browser isn't doing just one thing. It is just the JavaScript engine which is doing one thing at a time, but the browser is doing a lot of things behind the scenes."* Timers tick, network requests proceed, and events are captured, all concurrently, while the engine runs your code on a single stack.
+*"The browser isn't doing just one thing. It is just the JavaScript engine which is doing one thing at a time, but the browser is doing a lot of things behind the scenes."* Timers tick, network requests proceed, and events are captured, all concurrently, while the engine runs your code on a single stack.
 
 ### 8.9 Full event-loop diagram
 
@@ -530,27 +520,25 @@ flowchart TB
 
 ### 9.1 Which queue gets what
 
-**From the transcript:**
-
 | Goes into the **Microtask Queue** (high priority) | Goes into the **Callback Queue** (lower priority) |
 |---|---|
 | Callbacks from **promises** (including `fetch`'s) | `setTimeout` callbacks |
 | **MutationObserver** callbacks | DOM event listener callbacks (click, etc.) |
 | | Essentially all other callbacks |
 
-**MutationObserver** (from the transcript): watches the DOM tree for changes ("mutations") and runs a callback when one occurs. The instructor leaves it as homework to read more.
+**MutationObserver** : watches the DOM tree for changes ("mutations") and runs a callback when one occurs. The instructor leaves it as homework to read more.
 
 ### 9.2 Naming
 
-**From the transcript:** The callback queue is also called the **task queue** (or "macrotask queue" by some). The instructor prefers "callback queue" because "microtask" and "task" sound too alike.
+The callback queue is also called the **task queue** (or "macrotask queue" by some). The instructor prefers "callback queue" because "microtask" and "task" sound too alike.
 
 ### 9.3 Priority rule
 
-**From the transcript:** If three microtasks are pending and one task is in the callback queue, the event loop gives the callback-queue task a turn **only after all microtasks have completed**.
+If three microtasks are pending and one task is in the callback queue, the event loop gives the callback-queue task a turn **only after all microtasks have completed**.
 
 ### 9.4 Starvation
 
-**From the transcript:** Suppose a microtask, when executed, creates **another** microtask, which creates another, and so on. Since microtasks always take priority, the callback-queue tasks **never get a chance to run**, possibly for a very long time. This is called **starvation** of the callback queue.
+ Suppose a microtask, when executed, creates **another** microtask, which creates another, and so on. Since microtasks always take priority, the callback-queue tasks **never get a chance to run**, possibly for a very long time. This is called **starvation** of the callback queue.
 
 ```javascript
 // Supplementary: a (dangerous!) microtask starvation demonstration
@@ -595,7 +583,7 @@ console.log("2: sync");
 
 ### 10.1 Why JavaScript runs everywhere
 
-**From the transcript:** JavaScript can run inside a browser, a server, a smartwatch, a light bulb, and even robots. This works because of the **JavaScript runtime environment**.
+JavaScript can run inside a browser, a server, a smartwatch, a light bulb, and even robots. This works because of the **JavaScript runtime environment**.
 
 ### 10.2 Definition
 
@@ -608,11 +596,11 @@ A **JavaScript runtime environment** is a big container that has **everything re
 - A **microtask queue**.
 - Other things, depending on the environment.
 
-> **From the transcript:** A runtime environment is **not possible without a JavaScript engine**.
+> A runtime environment is **not possible without a JavaScript engine**.
 
 ### 10.3 Examples of runtimes
 
-| Runtime | Notes from the transcript |
+| Runtime | Notes |
 |---------|---------------------------|
 | **Browser** | Every browser has a runtime environment, which is why it can execute JavaScript. |
 | **Node.js** | An open source JavaScript runtime that runs JavaScript **outside the browser**. |
@@ -620,7 +608,6 @@ A **JavaScript runtime environment** is a big container that has **everything re
 
 ### 10.4 APIs differ between runtimes
 
-**From the transcript:**
 
 - Some APIs are **specific**: for example, `localStorage` exists in the browser but not necessarily in Node.js.
 - Some APIs are **shared by name**: `setTimeout` and `console` exist in both browsers and Node.js.
@@ -659,7 +646,7 @@ flowchart TB
 
 ### 11.1 What an engine is (and is not)
 
-**From the transcript:** A JavaScript engine is **not a machine** or hardware. It is a **normal program**, written in a lower-level language. For example, Google's V8 is written in **C++**. It takes high-level code (what we write in JavaScript) and produces **machine-level code** that the computer can execute.
+A JavaScript engine is **not a machine** or hardware. It is a **normal program**, written in a lower-level language. For example, Google's V8 is written in **C++**. It takes high-level code (what we write in JavaScript) and produces **machine-level code** that the computer can execute.
 
 > Diagrams draw the engine as a box only for clarity. It is ordinary software written by engineers.
 
@@ -677,13 +664,13 @@ flowchart TB
 
 ### 11.3 Engines follow a standard
 
-**From the transcript:** Anyone can create a JavaScript engine. The key rule is to follow the **ECMAScript standards** (the language specification). ECMAScript is described as a kind of "governing body" of the language.
+Anyone can create a JavaScript engine. The key rule is to follow the **ECMAScript standards** (the language specification). ECMAScript is described as a kind of "governing body" of the language.
 
 > **Supplementary:** More precisely, ECMAScript is the *language specification* maintained by Ecma International's TC39 committee. It is a standard document rather than software or an organization of its own.
 
 ### 11.4 The three phases
 
-**From the transcript:** Source code goes into the engine and passes through three major steps:
+Source code goes into the engine and passes through three major steps:
 
 ```mermaid
 flowchart LR
@@ -707,7 +694,7 @@ flowchart LR
 
 An **Abstract Syntax Tree** is a tree structure that represents the grammatical structure of the program. It sounds complicated, but it is just a hierarchy: the statement at the top, its parts as branches, and basic values as leaves.
 
-### 12.3 Example from the transcript
+### 12.3 Example
 
 For the line:
 
@@ -749,8 +736,6 @@ The instructor recommends **astexplorer.net**, a website that shows the AST gene
 
 ### 13.1 Interpreter versus compiler
 
-**From the transcript:**
-
 | | Interpreter | Compiler |
 |---|---|---|
 | How it works | Executes code **line by line, in order**; does not know what comes next | Compiles the **whole code first**, producing an **optimized version**, then executes that |
@@ -759,12 +744,12 @@ The instructor recommends **astexplorer.net**, a website that shows the AST gene
 
 ### 13.2 Is JavaScript interpreted or compiled?
 
-**From the transcript:** *It depends on the engine.*
+*It depends on the engine.*
 
 - Originally, Brendan Eich's engine used an **interpreter**. Browsers could not wait for compilation before running code.
 - Modern engines use **both an interpreter and a compiler**. This is called **JIT (Just-In-Time) compilation**, "the best of both worlds".
 
-### 13.3 How JIT works (from the transcript)
+### 13.3 How JIT works 
 
 1. After parsing, the **AST** goes to the **interpreter**.
 2. The interpreter converts it to **bytecode**, which moves to execution.
@@ -773,7 +758,7 @@ The instructor recommends **astexplorer.net**, a website that shows the AST gene
 
 ### 13.4 JIT versus AOT
 
-**From the transcript:** Some engines use **AOT (Ahead-Of-Time)** compilation. The compiler takes code that will run **later** and optimizes it beforehand, also producing bytecode for execution.
+Some engines use **AOT (Ahead-Of-Time)** compilation. The compiler takes code that will run **later** and optimizes it beforehand, also producing bytecode for execution.
 
 | | JIT | AOT |
 |---|---|---|
@@ -790,14 +775,14 @@ The instructor recommends **astexplorer.net**, a website that shows the AST gene
 
 ### 14.1 The two essential components
 
-**From the transcript:** Execution is impossible without two components of the engine:
+Execution is impossible without two components of the engine:
 
 1. **Call stack**: the same stack from Part I, where execution contexts are pushed and popped as functions run.
 2. **Memory heap**: where **all variables and functions are assigned memory**. It stays in sync with the call stack, the garbage collector, and other parts.
 
 ### 14.2 Garbage collector
 
-**From the transcript:** The **garbage collector** frees memory whenever possible. When a function is no longer used, or a timeout is cleared, the garbage collector "collects the garbage". It uses the **mark-and-sweep algorithm** (given as homework).
+The **garbage collector** frees memory whenever possible. When a function is no longer used, or a timeout is cleared, the garbage collector "collects the garbage". It uses the **mark-and-sweep algorithm** (given as homework).
 
 > **Supplementary: mark and sweep in brief.**
 > 1. **Mark**: starting from "roots" (such as the global object and the current call stack), follow references and mark everything reachable.
@@ -817,7 +802,7 @@ Recall that the call stack executes your code. The memory heap stores the data i
 
 ## 15. Compiler Optimization Techniques
 
-**From the transcript:** Beyond garbage collection, compilers apply many optimizations while compiling. The instructor names three and leaves them as homework:
+Beyond garbage collection, compilers apply many optimizations while compiling. as homework:
 
 | Technique | Brief note (supplementary) |
 |-----------|----------------------------|
