@@ -71,7 +71,7 @@ After studying these notes you should be able to:
 
 ### Why this topic matters
 
-The instructor opens with a blunt claim: many JavaScript developers cannot explain the event loop, callback queues, and the microtask queue, and these topics come up repeatedly in interviews. (Whether the figure of "90%" is accurate is not something the transcript supports. Treat it as motivational rhetoric.) What is certainly true is that understanding this machinery lets you:
+What is certainly true is that understanding this machinery lets you:
 
 - Predict the order in which code runs.
 - Debug "why did my callback run late?" problems.
