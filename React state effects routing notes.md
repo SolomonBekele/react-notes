@@ -424,11 +424,6 @@ Step by step:
 
 TypeScript infers the type from the initial value. For an empty array or `null`, pass the type explicitly as a generic (`useState<User[]>([])`), otherwise TypeScript infers `never[]` or `null`.
 
-**Lazy initialization (optional):** if computing the initial value is expensive, pass a function. React calls it only on the first render.
-
-```tsx
-const [items, setItems] = useState(() => loadItemsFromStorage());
-```
 
 ### 4.4 Scope and naming
 
