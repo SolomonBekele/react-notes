@@ -424,6 +424,11 @@ Step by step:
 
 TypeScript infers the type from the initial value. For an empty array or `null`, pass the type explicitly as a generic (`useState<User[]>([])`), otherwise TypeScript infers `never[]` or `null`.
 
+**Lazy initialization (optional):** if computing the initial value is expensive, pass a function. React calls it only on the first render.
+
+```tsx
+const [items, setItems] = useState(() => loadItemsFromStorage());
+```
 
 ### 4.4 Scope and naming
 
@@ -1936,3 +1941,2825 @@ Install and enable **`eslint-plugin-react-hooks`**. Its `rules-of-hooks` and `ex
 **Key lesson (Section 12):** Same hooks, same order, every render. Call hooks at the top level of components and custom hooks only.
 
 ---
+
+## 13. React Router Fundamentals
+
+### 13.1 What is routing?
+
+**Routing** means showing different content for different URLs:
+
+| URL | Page |
+|---|---|
+| `/` | Home |
+| `/about` | About |
+| `/contact` | Contact |
+| `/users/3` | Details of user 3 |
+
+In React, a **"page" is just a component** (or a composition of components). "Everything is a component." Routing decides *which component to show for the current URL*. "Page" is a convenient word, but the router is really swapping components.
+
+React itself has no router. The standard library is **React Router** (`react-router-dom` for web apps).
+
+### 13.2 Single-page applications and client-side routing
+
+A React app is normally a **single-page application (SPA)**: the browser loads the app once, and navigating to another "page" swaps components in the browser without requesting a new HTML document.
+
+| | Server-side routing | Client-side routing |
+|---|---|---|
+| Pages | Separate documents (`index.html`, `about.html`, ...) | One app; pages are components |
+| On navigation | Network request for a new HTML page, **full page reload** | **No page request**; React Router swaps components |
+| Where the code lives | The server returns each page | All components were already loaded in the browser |
+| React Router | | This is what React Router does |
+
+The only network calls a client-routed app makes during navigation are **data** calls (APIs), not page fetches.
+
+> **Not to be confused with server-side rendering (SSR)**, which is a separate topic about generating the first HTML on a server.
+
+### 13.3 `<a href>` vs. `<Link>`
+
+```tsx
+<a href="/about">About</a>        // works, but reloads the whole page: all state is lost
+<Link to="/about">About</Link>    // swaps components without reloading
+```
+
+`Link` renders a real `<a>` element in the DOM (inspect it and you'll see an anchor). It is React Router's **wrapper** that intercepts the click, updates the URL using the browser's History API, and lets the router render the matching component. Notice the prop is **`to`**, not `href`.
+
+**Evidence that no reload happens:** the browser's reload indicator doesn't spin, and in the Elements panel only the page area changes while the header stays untouched.
+
+> **Rule:** use `Link` or `NavLink` for in-app navigation. Use `<a href>` only for external sites.
+
+### 13.4 Two families of React Router APIs
+
+React Router has evolved. Two related ways to define routes exist in the same library. They are **not separate libraries**:
+
+| | Declarative routing (primary in these notes) | Data router approach |
+|---|---|---|
+| Routes defined as | JSX: `<Routes>` containing `<Route>` elements | An array of route objects passed to `createBrowserRouter` |
+| Router provider | `<BrowserRouter>` | `<RouterProvider router={router} />` |
+| Introduced | The classic API | Added in v6.4 |
+
+Shared pieces: `Link`, `NavLink`, `Outlet`, `Navigate`, `useNavigate`, `useParams`, and `useLocation` work in both. The main exceptions are data-router-only features (loaders, actions, `errorElement`, `useRouteError`, `useLoaderData`), covered in [Sections 17](#17-error-pages-and-userouteerror) and [19](#19-comparison-with-createbrowserrouter-and-routerprovider).
+
+> **Important rule for all examples:** **never mix both configurations in one example.** Don't render a `RouterProvider` inside a `BrowserRouter` or the reverse. Use one router at the root.
+
+```mermaid
+flowchart LR
+  subgraph A["Declarative (primary)"]
+    BR["BrowserRouter"] --> RS["Routes"] --> RT["Route (path, element)"]
+  end
+  subgraph B["Data router (comparison)"]
+    CBR["createBrowserRouter([...])"] --> RP["RouterProvider"]
+  end
+```
+
+### 13.5 Router types
+
+`BrowserRouter` (and `createBrowserRouter`) use the browser's History API and give clean URLs like `/about`. This is the right choice for normal web apps. Others exist for special cases:
+
+| Router | Use |
+|---|---|
+| `BrowserRouter` / `createBrowserRouter` | Standard web apps |
+| `HashRouter` | URLs like `/#/about`, for hosts that can't redirect all paths to `index.html` |
+| `MemoryRouter` / `createMemoryRouter` | Tests and non-browser environments |
+| `StaticRouter` | Server rendering |
+
+> **Supplementary:** A deployed SPA needs the host to serve `index.html` for any unknown path, otherwise refreshing `/about` produces a server 404. This is a hosting setting, not a React issue.
+
+### 13.6 Versions
+
+- **v6.4+ and v7:** both approaches are available. v7 consolidates the code in the `react-router` package; `react-router-dom` re-exports it, so the imports in these notes keep working.
+- **v5:** has `Switch` and `component=` props, which are different APIs. If your project is on v5, migrate to v6 or later, because the documentation and syntax in these notes won't match.
+
+### 13.7 Route matching
+
+When the URL changes, the router compares it with your route patterns and renders the **best match**:
+
+- Static segments (`/about`) beat dynamic ones (`/users/:id`).
+- Dynamic segments beat the catch-all `*`.
+- Order of `<Route>` elements doesn't matter: React Router ranks matches rather than taking the first one.
+- Paths are case-insensitive by default.
+
+**Key lesson (Section 13):** Pages are components. A router maps URLs to components. `Link` navigates without reloading.
+
+---
+
+## 14. Declarative Routing with `Routes` and `Route`
+
+This is the **primary** approach in these notes.
+
+### 14.1 The building blocks
+
+| Piece | Purpose |
+|---|---|
+| `BrowserRouter` | Provides routing context (the current URL and navigation tools) to everything inside it. Place it **once**, near the root. |
+| `Routes` | A container that looks at the current URL and renders the best matching child `Route` |
+| `Route` | One mapping. `path` is the URL pattern; `element` is the JSX to render |
+| `Link` / `NavLink` | Navigation links without page reloads |
+| `useParams` | Reads dynamic URL segments such as `:userId` |
+
+```tsx
+<BrowserRouter>
+  <Routes>
+    <Route path="/" element={<Home />} />
+    <Route path="/about" element={<About />} />
+  </Routes>
+</BrowserRouter>
+```
+
+Where `BrowserRouter` lives: you can wrap `<App />` in `main.tsx`, **or** put it inside `App.tsx` as the examples here do (so one file is enough). Do it in **only one place**. A second router produces: *"You cannot render a `<Router>` inside another `<Router>`."*
+
+### 14.2 Route patterns
+
+| Pattern | Matches | Notes |
+|---|---|---|
+| `path="/"` or `index` | The parent's own URL | `index` marks the default child route |
+| `path="/about"` | `/about` | Static segment |
+| `path="users/:userId"` | `/users/3`, `/users/abc` | `:userId` is a **dynamic segment** (route parameter) |
+| `path="*"` | Anything unmatched | Catch-all, used for **not-found pages** |
+
+Prefer a stable, unique **id** in dynamic URLs (`/users/3`), not a name.
+
+### 14.3 Creating page components
+
+A page is a normal component, usually in its own file (for example `src/pages/About.tsx`, with a default export):
+
+```tsx
+const About = () => {
+  return (
+    <div>
+      <h1>About</h1>
+      <p>This is the About page.</p>
+    </div>
+  );
+};
+
+export default About;
+```
+
+**The `rafce` shortcut.** In VS Code, the *ES7+ React/Redux/React-Native snippets* extension expands the abbreviation `rafce` (then Enter) into a **r**eact **a**rrow **f**unction **c**omponent with **e**xport: the boilerplate above, including an `import React` line your modern setup doesn't need (delete it). Some snippet packs also offer TypeScript variants; check your extension's snippet list.
+
+- It's fine for speed once you are experienced.
+- **While learning, type components yourself.** It makes the syntax stick and prepares you for interviews where snippets aren't available.
+- Remember `export default` so other files can import the page.
+
+### 14.4 Complete example: a multi-page app with routes, links, params, and not-found
+
+**Objective:** Build a small multi-page app: Home, About, Contact, a Users list, a User detail page using a route parameter, and a custom not-found page.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import {
+  BrowserRouter,
+  Link,
+  NavLink,
+  Route,
+  Routes,
+  useParams,
+} from "react-router-dom";
+
+interface User {
+  id: number;
+  name: string;
+  role: string;
+}
+
+const USERS: User[] = [
+  { id: 1, name: "Ada Lovelace", role: "Mathematician" },
+  { id: 2, name: "Grace Hopper", role: "Computer scientist" },
+  { id: 3, name: "Alan Turing", role: "Logician" },
+];
+
+function Home() {
+  return <h1>Home</h1>;
+}
+
+function About() {
+  return (
+    <div>
+      <h1>About</h1>
+      <p>This is a small routing demo.</p>
+    </div>
+  );
+}
+
+function Contact() {
+  return <h1>Contact</h1>;
+}
+
+function UsersList() {
+  return (
+    <div>
+      <h1>Users</h1>
+      <ul>
+        {USERS.map((user) => (
+          <li key={user.id}>
+            <Link to={`/users/${user.id}`}>{user.name}</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function UserDetail() {
+  // Hooks first. The key "userId" matches ":userId" in the route path.
+  const { userId } = useParams<{ userId: string }>();
+  const user = USERS.find((u) => u.id === Number(userId));
+
+  if (!user) {
+    return (
+      <div>
+        <h1>User not found</h1>
+        <Link to="/users">Back to users</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.role}</p>
+      <Link to="/users">Back to users</Link>
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div>
+      <h1>404: Page not found</h1>
+      <Link to="/">Go home</Link>
+    </div>
+  );
+}
+
+const navLinkStyle = ({ isActive }: { isActive: boolean }) => ({
+  fontWeight: isActive ? "bold" : "normal",
+  marginRight: 12,
+});
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      {/* Outside <Routes>, so it stays on screen for every page */}
+      <nav>
+        <NavLink to="/" end style={navLinkStyle}>Home</NavLink>
+        <NavLink to="/about" style={navLinkStyle}>About</NavLink>
+        <NavLink to="/contact" style={navLinkStyle}>Contact</NavLink>
+        <NavLink to="/users" style={navLinkStyle}>Users</NavLink>
+      </nav>
+
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/users" element={<UsersList />} />
+        <Route path="/users/:userId" element={<UserDetail />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+> If your `main.tsx` already wraps `<App />` in `<BrowserRouter>`, delete the `BrowserRouter` wrapper from this `App.tsx`. Don't change `main.tsx` unless you need to.
+
+**Explanation**
+
+1. `BrowserRouter` supplies routing context to everything inside it.
+2. The `<nav>` is **outside** `Routes`, so it never disappears. (A header placed *inside* a page component would vanish when the page changes. [Section 18](#18-nested-routes-and-outlet) shows the layout-route alternative.)
+3. `NavLink` is like `Link` but passes an `isActive` flag, used here to bold the current link. The `end` prop on the Home link stops `/` from counting as active on every URL.
+4. `Routes` picks the best match for the URL and renders its `element`.
+5. `:userId` makes that segment dynamic. `useParams` returns an object such as `{ userId: "2" }`. **Route params are always strings**, so convert with `Number(...)` when comparing with numeric ids.
+6. `path="*"` matches anything not matched above and renders the custom not-found page.
+7. `useParams` is called **before** the early return, as the Rules of Hooks require.
+
+**Expected behavior**
+
+| URL | Result |
+|---|---|
+| `/` | Home |
+| `/about`, `/contact` | Matching page, nav stays |
+| `/users` | List of users with links |
+| `/users/2` | Grace Hopper's page |
+| `/users/99` | "User not found" with a back link |
+| `/anything-else` | Custom 404 page |
+
+Clicking links never reloads the page.
+
+**Common mistakes**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Blank page, console warning *"No routes matched location"* | No matching `Route` and no `*` route | Add `<Route path="*" ... />` |
+| `useRoutes() may be used only in the context of a <Router>` / `useNavigate() may be used only in the context of a <Router>` | Component is outside `BrowserRouter` | Wrap in `BrowserRouter` |
+| `Cannot render a <Router> inside another <Router>` | Two routers | Keep only one |
+| `Link` ignores the path | Used `href` | Use `to` |
+| `<Route>` used outside `<Routes>` | Wrong nesting | Routes must be inside `<Routes>` |
+| `userId` is `undefined` | Param name doesn't match the route | `:userId` in the path and `userId` in `useParams` must be identical |
+| Comparing `"2" === 2` fails | Params are strings | `Number(userId)` |
+| Route works by typing the URL but page reloads on click | Used `<a href>` | Use `Link` |
+| Link works but route is `/restaurant/..` vs `/restaurants/..` | Spelling mismatch between link and route | Make them identical |
+
+**Key lesson:** `Routes` + `Route` map URLs to components. `:param` makes segments dynamic. `*` handles unmatched URLs.
+
+### 14.5 Organizing routes and page components
+
+A common layout for growing apps:
+
+```text
+src/
+├── App.tsx            ← BrowserRouter + Routes
+├── pages/
+│   ├── Home.tsx
+│   ├── About.tsx
+│   ├── Contact.tsx
+│   ├── UsersList.tsx
+│   ├── UserDetail.tsx
+│   └── NotFound.tsx
+└── components/        ← shared pieces (NavBar, Shimmer, ...)
+```
+
+- Keep the **route table** (`Routes` / `Route`) in one place, usually `App.tsx`, so the URL structure is easy to read.
+- Keep each page a default-exported component in its own file, and import them in `App.tsx`.
+- Keep the link text and `to` paths consistent; consider constants for paths used in many places.
+
+---
+
+## 15. Programmatic Navigation with `useNavigate`
+
+### 15.1 Links vs. programmatic navigation
+
+| | Declarative navigation | Programmatic navigation |
+|---|---|---|
+| Tool | `Link`, `NavLink` | `useNavigate` |
+| Triggered by | The user clicking a visible link | Code: after a form submit, a finished request, a timer, a button |
+| Renders an `<a>` | Yes (good for accessibility, middle-click, "open in new tab") | No |
+| Use when | Navigation is the point of the element | Navigation is a *consequence* of something else |
+
+Prefer `Link` when something looks like a link. Use `useNavigate` when navigation follows logic (for example, after saving a form).
+
+### 15.2 How it works
+
+`useNavigate` is a **Hook** that returns a **navigation function**.
+
+```tsx
+import { useNavigate } from "react-router-dom";
+
+function SaveButton() {
+  const navigate = useNavigate();        // 1. call the HOOK at the top level
+
+  function handleClick() {
+    navigate("/dashboard");              // 2. call the returned FUNCTION in the handler
+  }
+
+  return <button onClick={handleClick}>Save</button>;
+}
+```
+
+The navigate function accepts:
+
+| Call | Effect |
+|---|---|
+| `navigate("/path")` | Go to a path (adds a history entry) |
+| `navigate("/path", { replace: true })` | Go there **replacing** the current history entry (the back button skips this page) |
+| `navigate("/path", { state: { ... } })` | Pass hidden state to the next page (read with `useLocation().state`) |
+| `navigate(-1)` / `navigate(1)` | Back / forward in history |
+| `navigate("../sibling")` | Relative to the current route |
+
+### 15.3 Hooks rules apply
+
+> **Calling the hook vs. calling the function.** `useNavigate()` is a Hook: it must follow the [Rules of Hooks](#12-rules-of-hooks): top level of a component or custom hook, not in a loop, condition, or **event handler**. The **function it returns** (`navigate`) *can* be called from handlers, effects, or callbacks.
+>
+> ```tsx
+> // Wrong
+> function handleClick() {
+>   const navigate = useNavigate();   // hook inside a handler
+>   navigate("/");
+> }
+> ```
+>
+> Also don't call `navigate(...)` directly **during render**. Navigation is a side effect and React warns about it. To redirect while rendering, use the `Navigate` component ([Section 16](#16-redirects-with-navigate)); to navigate after something happens, call it from an event handler or an effect.
+
+`useNavigate` only works **inside a router**. The component using it must be rendered under `BrowserRouter` (or `RouterProvider`).
+
+### 15.4 Complete example: navigating after an action
+
+**Objective:** Use `useNavigate` for a simple jump, a "Back" button, and a navigation that happens after an async action, passing data with `state`.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import { useState } from "react";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+
+function Home() {
+  const navigate = useNavigate();
+  return (
+    <div>
+      <h1>Home</h1>
+      <button onClick={() => navigate("/products")}>Browse products</button>
+    </div>
+  );
+}
+
+function Products() {
+  const navigate = useNavigate();
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function handleBuy() {
+    setIsSaving(true);
+    // Simulate a request to a server
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    // Navigation is a consequence of the finished action.
+    // `replace` prevents Back from returning to a finished checkout.
+    navigate("/thanks", { replace: true, state: { orderId: 1042 } });
+  }
+
+  return (
+    <div>
+      <h1>Products</h1>
+      <button onClick={() => navigate(-1)}>Back</button>{" "}
+      <button onClick={handleBuy} disabled={isSaving}>
+        {isSaving ? "Processing..." : "Buy now"}
+      </button>
+    </div>
+  );
+}
+
+function Thanks() {
+  const location = useLocation();
+  const state = location.state as { orderId: number } | null;
+  const navigate = useNavigate();
+
+  return (
+    <div>
+      <h1>Thank you!</h1>
+      <p>{state ? `Your order number is ${state.orderId}.` : "No order found."}</p>
+      <button onClick={() => navigate("/")}>Home</button>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/products" element={<Products />} />
+        <Route path="/thanks" element={<Thanks />} />
+        <Route path="*" element={<h1>Not found</h1>} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+**Explanation**
+
+1. Each page that navigates calls `useNavigate()` **once, at the top**, and stores the function.
+2. `navigate("/products")` is a plain jump.
+3. `navigate(-1)` mimics the browser Back button.
+4. `handleBuy` is `async`. `setIsSaving(true)` re-renders the button as "Processing...", then after the simulated request, `navigate(...)` moves on. The hook was called at the top of the component, not inside `handleBuy`.
+5. `state` carries data to the next page without putting it in the URL. `Thanks` reads it with `useLocation`. It's `null` if the user opens `/thanks` directly, so the code handles that.
+
+**Expected behavior:** Home → click **Browse products** → Products → **Buy now** shows "Processing...", then the Thank-you page with the order number. **Back** on the Products page returns to Home. Pressing the browser Back button on Thanks does **not** return to the checkout (because of `replace`).
+
+**Common mistakes**
+
+| Mistake | Fix |
+|---|---|
+| `useNavigate()` inside an event handler | Call the hook at the top; call `navigate` in the handler |
+| `navigate("/x")` directly in the render body | Use `<Navigate>` or call it from a handler/effect |
+| `useNavigate() may be used only in the context of a <Router>` | Render the component inside the router |
+| Relying on `location.state` without a `null` check | State is lost on refresh or direct visits |
+| Using `useNavigate` for ordinary menu links | Use `Link`/`NavLink` |
+
+**Key lesson:** `useNavigate` gives you a function. Get it at the top level; call it from logic.
+
+---
+
+## 16. Redirects with `Navigate`
+
+### 16.1 `Navigate` vs. `useNavigate`
+
+| | `useNavigate` | `Navigate` |
+|---|---|---|
+| Kind | **Hook** returning a function | **Component** |
+| How it navigates | You call the function from event/effect logic | It navigates **when it is rendered** |
+| Typical use | After a click, form submit, or finished request | Redirects decided during rendering |
+| Rules of Hooks | Yes (the hook call) | No (it's a component; use it like any JSX) |
+
+```tsx
+<Navigate to="/login" replace />    // when this renders, the user is sent to /login
+```
+
+- `to`: destination.
+- `replace`: replace the current history entry. Usually what you want for redirects, so Back doesn't bounce the user into the redirect again.
+- `state`: pass data to the destination (for example where the user came from).
+
+### 16.2 Where redirects are used
+
+1. **Renamed or moved URLs:** `/old-about` → `/about`.
+2. **Protected pages:** send signed-out users to `/login`.
+3. **Default pages:** `/` → `/dashboard`.
+4. **After-the-fact redirects:** once logged in, don't show the login page.
+
+### 16.3 Complete example: a redirect route and a protected route
+
+**Objective:** Demonstrate a redirect route and a route guard using `Navigate`, and use `useNavigate` to finish login.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import { useState } from "react";
+import type { ReactNode } from "react";
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+
+function Home() {
+  return (
+    <div>
+      <h1>Home</h1>
+      <Link to="/dashboard">Dashboard (protected)</Link>{" "}
+      <Link to="/old-about">Old About link</Link>
+    </div>
+  );
+}
+
+function About() {
+  return <h1>About</h1>;
+}
+
+interface LoginProps {
+  onLogin: () => void;
+}
+
+function Login({ onLogin }: LoginProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Where the user was trying to go, if a guard redirected them here
+  const from =
+    (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? "/dashboard";
+
+  function handleLogin() {
+    onLogin();
+    navigate(from, { replace: true });
+  }
+
+  return (
+    <div>
+      <h1>Login</h1>
+      <button onClick={handleLogin}>Log in</button>
+    </div>
+  );
+}
+
+function Dashboard({ onLogout }: { onLogout: () => void }) {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <button onClick={onLogout}>Log out</button>
+    </div>
+  );
+}
+
+interface RequireAuthProps {
+  isLoggedIn: boolean;
+  children: ReactNode;
+}
+
+function RequireAuth({ isLoggedIn, children }: RequireAuthProps) {
+  const location = useLocation();
+  if (!isLoggedIn) {
+    // Rendering <Navigate> sends the user away; remember where they wanted to go
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  return <>{children}</>;
+}
+
+export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+
+        {/* 1. A pure redirect route */}
+        <Route path="/old-about" element={<Navigate to="/about" replace />} />
+
+        <Route path="/login" element={<Login onLogin={() => setIsLoggedIn(true)} />} />
+
+        {/* 2. A protected route */}
+        <Route
+          path="/dashboard"
+          element={
+            <RequireAuth isLoggedIn={isLoggedIn}>
+              <Dashboard onLogout={() => setIsLoggedIn(false)} />
+            </RequireAuth>
+          }
+        />
+
+        <Route path="*" element={<h1>Not found</h1>} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+**Explanation**
+
+1. **Pure redirect:** the route for `/old-about` renders `<Navigate to="/about" replace />`. The moment it renders, the URL becomes `/about`.
+2. **Guard:** `RequireAuth` checks `isLoggedIn`. If false, it **renders** `Navigate`, which redirects to `/login` and attaches the attempted location in `state`. If true, it renders its `children`.
+3. **Finishing login:** `Login` uses `useNavigate` (a **user action** triggered the navigation, so a function call is the right tool) and sends the user to where they originally wanted to go.
+4. `isLoggedIn` lives in `App`'s state and is passed down. In real apps this often lives in context or a library, and **real security must be enforced by the server**. Client-side guards only control the UI.
+5. Both Hooks (`useNavigate`, `useLocation`) are called at the top level of their components.
+
+**Expected behavior**
+
+| Action | Result |
+|---|---|
+| Visit `/old-about` | Immediately becomes `/about` (Back doesn't return to `/old-about` because of `replace`) |
+| Visit `/dashboard` while logged out | Redirected to `/login` |
+| Click **Log in** | Lands on `/dashboard` (where you were heading) |
+| Click **Log out** | State resets; visiting `/dashboard` redirects again |
+| Refresh the page | State resets (it's in memory only) |
+
+**Common mistakes**
+
+| Mistake | Fix |
+|---|---|
+| Calling `navigate()` in the render body to redirect | Return `<Navigate />` instead |
+| Forgetting `replace` on redirects | Add `replace` so Back doesn't loop |
+| Infinite redirect loop (guard redirects to a page that itself is guarded) | Keep the login route unguarded |
+| Treating client guards as security | Always authorize on the server too |
+| Using `Navigate` inside an event handler | Handlers should call the `navigate` function; `Navigate` is JSX to render |
+
+**Key lesson:** `Navigate` redirects by being rendered. `useNavigate` redirects when you call its function.
+
+### 16.4 Handling unmatched routes (recap)
+
+A catch-all route sends users somewhere helpful:
+
+```tsx
+{/* A custom not-found page */}
+<Route path="*" element={<NotFound />} />
+
+{/* Or redirect unknown URLs home */}
+<Route path="*" element={<Navigate to="/" replace />} />
+```
+
+A custom page is usually friendlier and clearer, and avoids hiding typos in URLs. Without any `*` route, an unmatched URL renders nothing and logs a console warning.
+
+---
+
+## 17. Error Pages and `useRouteError`
+
+### 17.1 What kinds of errors are there?
+
+| Situation | What happens by default |
+|---|---|
+| **Unknown URL** (nothing matches) | Declarative `<Routes>`: renders nothing and logs a console warning. Data router: React Router's built-in "404 Not Found" error page |
+| **Error while rendering** a route (an exception thrown in a component) | Without handling, the React tree can unmount and show a blank page or the development error overlay |
+| **Error thrown from a loader or action** (data router only) | Rendered by the nearest route error element |
+
+Custom error pages let you replace these defaults with a helpful message and a way back.
+
+### 17.2 `useRouteError` and `errorElement` (data router)
+
+`errorElement` and `useRouteError` belong to the **data router** API (`createBrowserRouter`). They are covered here because they are part of React Router's error-page toolkit, and demonstrated with a self-contained data-router example. Do **not** add this example's router into a `BrowserRouter` app.
+
+- **`errorElement`** (or the equivalent `ErrorBoundary` route property) is the element a route renders when it, or something below it, throws or when the URL doesn't match.
+- **`useRouteError()`** is a Hook, callable only inside an error element, that returns whatever was thrown. For routing errors (404, or a `Response` thrown from a loader) it's an **error response object** with `status` and `statusText`. For a runtime exception it's the `Error` object.
+- **`isRouteErrorResponse(error)`** tells the two apart, which matters for TypeScript.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import {
+  Link,
+  RouterProvider,
+  createBrowserRouter,
+  isRouteErrorResponse,
+  useRouteError,
+} from "react-router-dom";
+
+function Home() {
+  return (
+    <div>
+      <h1>Home</h1>
+      <Link to="/crash">Go to a page that throws</Link>
+    </div>
+  );
+}
+
+function Crash(): never {
+  // Throwing during render sends the error to the nearest errorElement
+  throw new Error("This page crashed on purpose.");
+}
+
+function ErrorPage() {
+  const error = useRouteError();
+  console.log(error);
+
+  let title = "Oops! Something went wrong.";
+  let detail = "An unexpected error occurred.";
+
+  if (isRouteErrorResponse(error)) {
+    // e.g. 404 Not Found for an unknown URL
+    title = `${error.status}: ${error.statusText}`;
+    detail =
+      error.status === 404 ? "That page doesn't exist." : "The server reported a problem.";
+  } else if (error instanceof Error) {
+    detail = error.message;
+  }
+
+  return (
+    <div>
+      <h1>{title}</h1>
+      <p>{detail}</p>
+      <Link to="/">Back to home</Link>
+    </div>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Home />,
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: "/crash",
+    element: <Crash />,
+    errorElement: <ErrorPage />,
+  },
+]);
+
+export default function App() {
+  return <RouterProvider router={router} />;
+}
+```
+
+**Explanation**
+
+1. `createBrowserRouter([...])` takes an array of **route objects** (`path`, `element`, `errorElement`). Create it **outside** the component so it isn't rebuilt on every render.
+2. For an unknown URL such as `/akshay`, the router itself generates a **404 error response**, so `ErrorPage` shows `404: Not Found`.
+3. For `/crash`, the component throws a normal `Error`, which `ErrorPage` shows via `error.message`.
+4. `useRouteError` is a normal Hook, so it follows the Rules of Hooks.
+5. `RouterProvider` is rendered **instead of** `BrowserRouter` and `Routes`. Do not nest it inside `BrowserRouter`.
+
+**Expected behavior:** `/` shows Home. `/crash` shows "This page crashed on purpose." in your custom page. `/anything-else` shows "404: Not Found." In development, a red error overlay may also appear, so dismiss it to see your page.
+
+**Common mistakes**
+
+| Mistake | Fix |
+|---|---|
+| `useRouteError` in a component rendered via `<Routes>` | It requires a data router. Use the approach in 17.3 instead |
+| Accessing `error.status` without narrowing in TypeScript | Use `isRouteErrorResponse(error)` first |
+| Placing `useRouteError` in a regular page component | Use it in the `errorElement` component |
+| Creating the router inside the component | Create it once at module level |
+
+### 17.3 Custom error handling with declarative routing
+
+With `BrowserRouter` + `Routes` there is no `errorElement`, but the same two needs are met differently:
+
+1. **Unmatched URLs:** a catch-all `path="*"` route renders your custom not-found page (see Sections 14 and 16.4).
+2. **Errors thrown while rendering:** use a React **error boundary**. Error boundaries must be class components (or you can use the `react-error-boundary` package).
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import { Component, useState } from "react";
+import type { ErrorInfo, ReactNode } from "react";
+import {
+  BrowserRouter,
+  Link,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+
+interface BoundaryProps {
+  children: ReactNode;
+}
+interface BoundaryState {
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): BoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Caught by boundary:", error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div>
+          <h1>Oops! Something went wrong.</h1>
+          <p>{this.state.error.message}</p>
+          <Link to="/">Back to home</Link>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function Home() {
+  return (
+    <div>
+      <h1>Home</h1>
+      <Link to="/buggy">Open the buggy page</Link>
+    </div>
+  );
+}
+
+function Buggy() {
+  const [explode, setExplode] = useState(false);
+  if (explode) {
+    throw new Error("The buggy page failed while rendering.");
+  }
+  return <button onClick={() => setExplode(true)}>Click to break this page</button>;
+}
+
+function NotFound() {
+  return (
+    <div>
+      <h1>404: Page not found</h1>
+      <Link to="/">Go home</Link>
+    </div>
+  );
+}
+
+// Inside BrowserRouter so useLocation works. The boundary is keyed by the URL, so
+// navigating to a different page gives it a fresh start after an error.
+function AppRoutes() {
+  const location = useLocation();
+  return (
+    <ErrorBoundary key={location.pathname}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/buggy" element={<Buggy />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </ErrorBoundary>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  );
+}
+```
+
+**Explanation**
+
+1. `ErrorBoundary` catches errors thrown while rendering its descendants and shows a fallback instead of crashing the whole app.
+2. It does **not** catch errors in event handlers or async code. Handle those with `try/catch` and state (as in Section 9.8).
+3. `key={location.pathname}` resets the boundary when the URL changes, so the "Back to home" link works.
+4. `path="*"` handles URLs that don't match any route.
+
+**Expected behavior:** `/` works. `/buggy` shows a button; clicking it shows the fallback error page. `/nonsense` shows the 404 page.
+
+**Key lesson (Section 17):** Not-found pages are a routing matter (`*` route, or the router's built-in 404). Runtime errors need an error element (data router) or an error boundary (declarative). `useRouteError` belongs to the data router.
+
+---
+
+## 18. Nested Routes and `Outlet`
+
+### 18.1 The problem: shared layout
+
+Suppose every page needs the same header. If the header lives inside each page component, or if each page is a separate top-level route that replaces the whole screen, the header **disappears** or has to be duplicated.
+
+```text
+Home:     [Header] [Home content]
+About:    [Header] [About content]
+Settings: [Header] [Settings content]
+```
+
+The solution is a **layout route**: a parent route whose component renders the shared UI and an **`Outlet`**, and **child routes** that supply what goes into the outlet.
+
+### 18.2 `Outlet`
+
+`Outlet` is a component from `react-router-dom` that marks **where the matching child route renders** inside the parent's layout.
+
+- It acts like a tunnel: depending on the URL, the matching child is pushed into the outlet's position.
+- It doesn't appear in the final HTML. It's replaced by the child's output, and users can't tell it exists.
+- If no child matches, the outlet renders nothing.
+
+```mermaid
+flowchart TD
+  AL["AppLayout"] --> H["Header (always visible)"]
+  AL --> O["Outlet"]
+  O -->|"/"| B["Home"]
+  O -->|"/about"| A["About"]
+  O -->|"/settings/..."| S["SettingsLayout (has its own Outlet)"]
+```
+
+### 18.3 Nested routes with `Routes` and `Route`
+
+In the declarative API, **nest `<Route>` elements**. The parent has an `element` that contains `<Outlet />`.
+
+```tsx
+<Routes>
+  <Route path="/" element={<AppLayout />}>        {/* parent: layout + <Outlet /> */}
+    <Route index element={<Home />} />            {/* "/" */}
+    <Route path="about" element={<About />} />     {/* "/about" */}
+  </Route>
+</Routes>
+```
+
+Key points:
+
+- **`index`** marks the child shown when the URL matches the parent's path exactly (here `/`).
+- **Child paths are relative** to the parent. Write `path="about"`, not `path="/about"`. A child path with a leading slash is treated as absolute and must still start with the parent's path.
+- A parent may omit `path` entirely to become a **pathless layout route**: it adds shared UI without adding a URL segment.
+- Nesting can go as deep as needed. Each level has its own `Outlet`.
+
+### 18.4 Complete example: a layout, a nested section, and an index redirect
+
+**Objective:** Keep one header on every page, add a nested "Settings" section with its own sub-navigation, and show a not-found page that still has the header.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import {
+  BrowserRouter,
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+} from "react-router-dom";
+
+const linkStyle = ({ isActive }: { isActive: boolean }) => ({
+  marginRight: 12,
+  fontWeight: isActive ? "bold" : "normal",
+});
+
+// Parent layout: shared header + Outlet
+function AppLayout() {
+  return (
+    <div>
+      <header style={{ borderBottom: "1px solid #ccc", marginBottom: 16 }}>
+        <strong style={{ marginRight: 16 }}>My App</strong>
+        <NavLink to="/" end style={linkStyle}>Home</NavLink>
+        <NavLink to="/about" style={linkStyle}>About</NavLink>
+        <NavLink to="/settings" style={linkStyle}>Settings</NavLink>
+      </header>
+      <main>
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+// Nested layout: sub-navigation + its own Outlet
+function SettingsLayout() {
+  return (
+    <div>
+      <h1>Settings</h1>
+      <nav style={{ marginBottom: 12 }}>
+        <NavLink to="profile" style={linkStyle}>Profile</NavLink>
+        <NavLink to="account" style={linkStyle}>Account</NavLink>
+      </nav>
+      <Outlet />
+    </div>
+  );
+}
+
+function Home() {
+  return <h2>Home</h2>;
+}
+function About() {
+  return <h2>About</h2>;
+}
+function Profile() {
+  return <p>Profile settings</p>;
+}
+function Account() {
+  return <p>Account settings</p>;
+}
+function NotFound() {
+  return <h2>404: Page not found</h2>;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<Home />} />
+          <Route path="about" element={<About />} />
+
+          <Route path="settings" element={<SettingsLayout />}>
+            {/* /settings → redirect to /settings/profile */}
+            <Route index element={<Navigate to="profile" replace />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="account" element={<Account />} />
+          </Route>
+
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+**Explanation**
+
+1. The top route has `path="/"` and renders `AppLayout`. Everything else is nested inside it, so the header persists on every URL, including the 404.
+2. `AppLayout` renders `<Outlet />`, where the matching child appears.
+3. `settings` is both a child of the top route and the parent of `profile` and `account`. `SettingsLayout` has its own `Outlet` for those two.
+4. `NavLink to="profile"` is **relative**: inside the settings layout it resolves to `/settings/profile`.
+5. The settings index route renders `<Navigate to="profile" replace />`, so `/settings` redirects to `/settings/profile`.
+6. The `*` route is nested inside the layout, so unknown URLs still show the header.
+
+**Expected behavior**
+
+| URL | What you see |
+|---|---|
+| `/` | Header + Home |
+| `/about` | Header + About |
+| `/settings` | Redirects to `/settings/profile`; header + Settings heading + sub-nav + "Profile settings" |
+| `/settings/account` | Header + Settings + "Account settings" |
+| `/nope` | Header + 404 |
+
+Navigation never reloads the page. Only the area where the `Outlet` sits changes.
+
+**Common mistakes**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Header disappears on other pages | Pages are top-level routes instead of children | Make them children of a layout route |
+| Layout shows but children don't | Parent has no `<Outlet />` | Add it where children should render |
+| Child route 404s | Used an absolute child path like `/about` under a parent with another prefix | Use relative child paths (`about`) |
+| `/settings` shows an empty section | No `index` route for the parent | Add an `index` route (content or `Navigate`) |
+| Home link is always bold | `/` matches every URL as a prefix | Add the `end` prop |
+| Nested `Outlet` shows nothing | Forgot nested `<Route>` children | Nest the child routes inside the parent route |
+
+> **Supplementary:** To pass data from a layout to its children without props, a parent can supply `<Outlet context={value} />` and children read it with `useOutletContext()`.
+
+**Key lesson:** Layout route + `Outlet` + child routes = shared UI that persists while the content changes.
+
+---
+
+## 19. Comparison with `createBrowserRouter` and `RouterProvider`
+
+### 19.1 The data-router approach
+
+This is the alternative way to configure the same library. Instead of JSX routes, you pass an **array of route objects** to `createBrowserRouter` and hand the result to `RouterProvider`.
+
+| Piece | Purpose |
+|---|---|
+| `createBrowserRouter(routes)` | Creates a browser-history router from route objects (`path`, `element`, `children`, `errorElement`, `loader`, `action`, ...). Called **once at module level** |
+| `RouterProvider router={router}` | Renders the router: it replaces `BrowserRouter` + `Routes` |
+| `Link` | Declarative navigation link (`to="..."`). Renders an `<a>`; no page reload |
+| `NavLink` | Like `Link`, plus **active-state** information: `isActive`, `isPending`, `isTransitioning`, usable in `className`/`style` functions, plus an automatic `active` class |
+| `Outlet` | Renders the matching child route inside a parent layout (same as in declarative routing) |
+
+`Link` and `NavLink` give **declarative** navigation (the user clicks a visible link). `useNavigate` gives **programmatic** navigation. Both work with either approach.
+
+### 19.2 Comparison table
+
+| Aspect | Declarative routing | Data router approach |
+|---|---|---|
+| Main configuration | `Routes` and `Route` (JSX) | `createBrowserRouter` (array of route objects) |
+| Router provider | Commonly `BrowserRouter` | `RouterProvider` |
+| Typical navigation | `Link`, `NavLink`, or `useNavigate` | `Link`, `NavLink`, or `useNavigate` |
+| Redirect component | `Navigate` | `Navigate` also works; loaders can also `redirect()` |
+| Nested layouts | Nested `<Route>` elements and `<Outlet />` | Nested route objects (`children`) and `<Outlet />` |
+| Error pages | Catch-all `*` route plus an error boundary | `errorElement` / `ErrorBoundary` and `useRouteError` |
+| Data-loading capabilities | Commonly handled in component logic with `useEffect` or a custom hook, or other supported patterns | Route **`loader`** and **`action`** functions load and mutate data as part of routing, with `useLoaderData`, `useNavigation`, and so on |
+| Typical use case | Straightforward declarative routing, small to medium apps, learning | Apps that benefit from route-level data loading, built-in error handling, and pending UI |
+
+> **Version note:** The table assumes React Router v6.4+ or v7. If you're on an older version, only the declarative column applies. Newer v7 releases also offer a "framework mode" with its own tooling. It's a different setup and is outside the scope of these notes.
+
+### 19.3 These are related APIs, not different libraries
+
+- They are both part of `react-router-dom` (and `react-router` in v7).
+- `Link`, `NavLink`, `Outlet`, `Navigate`, `useNavigate`, `useParams`, and `useLocation` are shared.
+- What differs is **how routes are declared** and **which extra features are available**.
+- **Don't mix the two configurations.** Choose one root: `BrowserRouter` **or** `RouterProvider`.
+
+### 19.4 Complete example: the same ideas with the data router
+
+**Objective:** See how a layout, nested routes, `NavLink`, `Outlet`, an error page, and a route `loader` look in the data-router style.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import {
+  Link,
+  NavLink,
+  Outlet,
+  RouterProvider,
+  createBrowserRouter,
+  isRouteErrorResponse,
+  useLoaderData,
+  useNavigation,
+  useRouteError,
+} from "react-router-dom";
+import type { LoaderFunctionArgs } from "react-router-dom";
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+const API = "https://jsonplaceholder.typicode.com";
+
+// ---- Loaders: run by the router BEFORE the page renders ----
+async function usersLoader(): Promise<User[]> {
+  const response = await fetch(`${API}/users`);
+  if (!response.ok) {
+    throw new Response("Could not load users", { status: response.status, statusText: "Error" });
+  }
+  return response.json();
+}
+
+async function userLoader({ params }: LoaderFunctionArgs): Promise<User> {
+  const response = await fetch(`${API}/users/${params.userId}`);
+  if (!response.ok) {
+    throw new Response("User not found", { status: response.status, statusText: "Not Found" });
+  }
+  return response.json();
+}
+
+// ---- Components ----
+const linkStyle = ({ isActive }: { isActive: boolean }) => ({
+  marginRight: 12,
+  fontWeight: isActive ? "bold" : "normal",
+});
+
+function Layout() {
+  const navigation = useNavigation(); // "idle" | "loading" | "submitting"
+  return (
+    <div>
+      <nav>
+        <NavLink to="/" end style={linkStyle}>Home</NavLink>
+        <NavLink to="/users" style={linkStyle}>Users</NavLink>
+      </nav>
+      {navigation.state === "loading" && <p>Loading...</p>}
+      <Outlet />
+    </div>
+  );
+}
+
+function Home() {
+  return <h1>Home</h1>;
+}
+
+function UsersPage() {
+  const users = useLoaderData() as User[];
+  return (
+    <ul>
+      {users.map((u) => (
+        <li key={u.id}>
+          <Link to={`/users/${u.id}`}>{u.name}</Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function UserPage() {
+  const user = useLoaderData() as User;
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+      <Link to="/users">Back</Link>
+    </div>
+  );
+}
+
+function ErrorPage() {
+  const error = useRouteError();
+  const message = isRouteErrorResponse(error)
+    ? `${error.status}: ${error.statusText}`
+    : error instanceof Error
+    ? error.message
+    : "Unknown error";
+  return (
+    <div>
+      <h1>Oops!</h1>
+      <p>{message}</p>
+      <Link to="/">Home</Link>
+    </div>
+  );
+}
+
+// ---- Route configuration: an array of objects ----
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,
+    errorElement: <ErrorPage />,
+    children: [
+      { index: true, element: <Home /> },
+      { path: "users", element: <UsersPage />, loader: usersLoader },
+      { path: "users/:userId", element: <UserPage />, loader: userLoader },
+    ],
+  },
+]);
+
+export default function App() {
+  return <RouterProvider router={router} />;
+}
+```
+
+**Explanation: how it differs from declarative routing**
+
+| Declarative example (Sections 14 and 18) | This data-router example |
+|---|---|
+| `<BrowserRouter><Routes><Route .../></Routes></BrowserRouter>` | `createBrowserRouter([...])` + `<RouterProvider />` |
+| Child `<Route>` elements nested in JSX | `children: [...]` arrays of objects |
+| Fetch in `useEffect` inside the page, with its own loading/error state | A **loader** fetches before the page renders; `useLoaderData` reads the result; thrown errors go to `errorElement` |
+| Loading UI written by hand in each page | `useNavigation().state` tells the layout when a navigation is loading |
+| Error boundary or catch-all route | `errorElement` + `useRouteError` |
+| Same `Link`, `NavLink`, `Outlet` | Same `Link`, `NavLink`, `Outlet` |
+
+Steps in the code:
+
+1. Two **loader** functions fetch data. When a URL matches a route, its loader runs first.
+2. A loader that throws a `Response` sends it to the `errorElement`, which uses `isRouteErrorResponse` to show `404: Not Found`.
+3. `UsersPage` and `UserPage` get their data from `useLoaderData()` with **no `useEffect`, no loading state, and no `null` check**, because the data exists before they render. (TypeScript can't infer the type, so the cast documents it.)
+4. `Layout` uses `Outlet` for children and `useNavigation` for a global loading hint.
+
+**Expected behavior:** `/users` lists ten users, `/users/3` shows one user, `/users/999` shows the error page "404: Not Found". The nav highlights the active link.
+
+**Common mistakes**
+
+| Mistake | Fix |
+|---|---|
+| Wrapping `RouterProvider` in `BrowserRouter` | Use only one router |
+| Calling `createBrowserRouter` inside the component | Define it at module level |
+| Using `<Routes>`/`<Route>` inside this setup for the main config | Use route objects (nested `Routes` are a different, advanced pattern) |
+| Using `useLoaderData` in a route without a loader | Add a `loader` to the route |
+| Forgetting that params are strings | `params.userId` is a string (or undefined) |
+
+### 19.5 Which should you choose?
+
+- **Declarative routing** is simpler to read and write for small and medium apps, and it composes naturally with `useEffect`/custom-hook data fetching. It is the primary approach in these notes.
+- **The data router** pays off when you want route-level loading, mutations (`action`), built-in error handling, and pending-navigation UI.
+- Concepts such as nested layouts, `Outlet`, `Link`, params, and redirects transfer directly between the two.
+
+**Key lesson (Section 19):** Same library, two ways to declare routes. Know the vocabulary of both, don't mix them in one app, and choose based on whether you want route-level data features.
+
+---
+
+## 20. Connecting State, Effects, API Data, and Routing
+
+### 20.1 How the pieces fit together
+
+```mermaid
+flowchart TD
+  R1["Render 1: placeholder (Shimmer)"] --> E["useEffect runs after render"]
+  E --> F["fetch(url)"]
+  F --> S["setState(data) or setState(error)"]
+  S --> R2["Render 2: real content or error message"]
+  R2 --> U["User types / clicks"]
+  U --> ST["state setter"] --> R3["Re-render; diff; minimal DOM update"]
+  R2 --> N["User clicks a Link"] --> P["URL changes; Routes renders another page"]
+  P --> PA["useParams reads the URL; effect refetches when the param changes"]
+```
+
+| Idea | Role |
+|---|---|
+| State | Remembers data, loading status, and input; changing it re-renders |
+| `useEffect` | Starts fetches after render; dependencies decide when to refetch |
+| Conditional rendering | Shows a shimmer, error, or content |
+| Router | Maps URLs to pages; a URL parameter becomes an effect dependency |
+| Rules of Hooks | Keep all hooks above any early return |
+| Custom hooks | Share the fetching logic between pages |
+
+### 20.2 Complete example: a small user directory
+
+**Objective:** Combine everything in one runnable file: a layout route with `Outlet`, a users list loaded with a reusable `useFetch` hook, live search, a detail page that reads a route parameter and refetches when it changes, `useNavigate` for Back, shimmer/loading/error states, and a not-found page.
+
+**Complete code (`App.tsx`)**
+
+```tsx
+import { useEffect, useState } from "react";
+import {
+  BrowserRouter,
+  Link,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
+
+// ---------- Types and constants ----------
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  company: { name: string };
+}
+
+const API = "https://jsonplaceholder.typicode.com";
+
+type FetchState<T> =
+  | { status: "loading" }
+  | { status: "success"; data: T }
+  | { status: "error"; message: string };
+
+// ---------- A custom hook: fetch JSON when the URL changes ----------
+function useFetch<T>(url: string): FetchState<T> {
+  const [state, setState] = useState<FetchState<T>>({ status: "loading" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ status: "loading" });
+
+    fetch(url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        return response.json() as Promise<T>;
+      })
+      .then((data) => setState({ status: "success", data }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      });
+
+    return () => controller.abort();
+  }, [url]); // refetch only when the URL changes
+
+  return state;
+}
+
+// ---------- Small shared UI ----------
+function Shimmer({ rows = 6 }: { rows?: number }) {
+  return (
+    <div>
+      {Array.from({ length: rows }, (_, i) => (
+        <div
+          key={i}
+          style={{ height: 18, margin: "10px 0", background: "#e5e7eb", borderRadius: 4 }}
+        />
+      ))}
+    </div>
+  );
+}
+
+const linkStyle = ({ isActive }: { isActive: boolean }) => ({
+  marginRight: 12,
+  fontWeight: isActive ? "bold" : "normal",
+});
+
+// ---------- Layout route ----------
+function Layout() {
+  return (
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: 16 }}>
+      <nav style={{ marginBottom: 16 }}>
+        <NavLink to="/" end style={linkStyle}>Home</NavLink>
+        <NavLink to="/users" style={linkStyle}>Users</NavLink>
+      </nav>
+      <Outlet />
+    </div>
+  );
+}
+
+// ---------- Pages ----------
+function Home() {
+  return (
+    <div>
+      <h1>User Directory</h1>
+      <Link to="/users">Browse users</Link>
+    </div>
+  );
+}
+
+function UsersPage() {
+  // All hooks first
+  const state = useFetch<User[]>(`${API}/users`);
+  const [searchText, setSearchText] = useState("");
+
+  if (state.status === "loading") return <Shimmer />;
+  if (state.status === "error") return <p>Could not load users: {state.message}</p>;
+
+  // Derived value: no second list in state, so nothing can drift out of sync
+  const visibleUsers = state.data.filter((user) =>
+    user.name.toLowerCase().includes(searchText.toLowerCase())
+  );
+
+  return (
+    <div>
+      <h1>Users</h1>
+      <input
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        placeholder="Search by name"
+      />
+      {visibleUsers.length === 0 && <p>No users match "{searchText}".</p>}
+      <ul>
+        {visibleUsers.map((user) => (
+          <li key={user.id}>
+            <Link to={`/users/${user.id}`}>{user.name}</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function UserDetail() {
+  const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
+  const state = useFetch<User>(`${API}/users/${userId}`);
+
+  if (state.status === "loading") return <Shimmer rows={4} />;
+  if (state.status === "error") {
+    return (
+      <div>
+        <p>Could not load this user: {state.message}</p>
+        <button onClick={() => navigate("/users")}>Back to users</button>
+      </div>
+    );
+  }
+
+  const user = state.data;
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>Email: {user.email}</p>
+      <p>Phone: {user.phone}</p>
+      <p>Company: {user.company.name}</p>
+      <button onClick={() => navigate(-1)}>Back</button>
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div>
+      <h1>404: Page not found</h1>
+      <Link to="/">Go home</Link>
+    </div>
+  );
+}
+
+// ---------- Routes ----------
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="users/:userId" element={<UserDetail />} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+**Explanation**
+
+1. **`useFetch`** is a custom hook: it calls `useState` and `useEffect`, so it follows the Rules of Hooks and can only be used in components or other hooks. Its state is a **discriminated union**, so TypeScript knows `data` exists only when `status === "success"`.
+2. The effect depends on `[url]`. The list page's URL never changes, so it fetches once. The detail page's URL contains `userId`, so **navigating from one user to another refetches automatically**, and `controller.abort()` cancels the earlier request.
+3. **Render first, fetch after:** both pages show a shimmer on the first render, then re-render with data or an error.
+4. In `UsersPage`, both hooks (`useFetch`, `useState`) are called **before** the early returns. The filtered list is **derived** during render from `state.data` and `searchText`, which is the cleaner pattern from Section 4.12.
+5. `UserDetail` reads the URL with `useParams`, and uses `useNavigate` for a **Back** action. Visiting `/users/999` returns a 404 from the API, which reaches the error branch through the `response.ok` check.
+6. The layout route supplies the nav and an `Outlet`. The `*` route lives inside the layout, so the 404 page keeps the nav.
+
+**Expected behavior**
+
+| Action | Result |
+|---|---|
+| Open `/users` | Shimmer, then ten users |
+| Type "er" in the search box | The list filters live as you type |
+| Click a name | `/users/N` shows details after a short shimmer |
+| Click **Back** | Returns to the list (the search text resets because the page re-mounted) |
+| Visit `/users/999` | Error message with a "Back to users" button |
+| Visit `/nonsense` | 404 page with the nav still visible |
+
+**Common mistakes**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Rendered more hooks than during the previous render" | A hook placed after an early return | Move all hooks above the returns |
+| Detail page keeps showing the previous user | Missing `url` (or `userId`) in the effect dependencies | Put it in the dependency array |
+| Old data flashes after quick navigation | No cleanup | Abort in the cleanup function |
+| Search typed but nothing filters | Forgot `onChange` or filtered the wrong list | Controlled input + derived filter |
+| TypeScript error accessing `state.data` | Not narrowed | Check `state.status === "success"` first |
+
+**Key lesson:** State holds data and status, effects load it after render, the URL supplies parameters that drive effects, and hooks always run in the same order.
+
+---
+
+## 21. Common Mistakes and Troubleshooting
+
+### 21.1 State and rendering
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Console shows the new value but the screen doesn't change | Plain variable instead of state | `useState` + setter |
+| `Assignment to constant variable` | Reassigning a `const` | Use the state setter |
+| UI doesn't update after `list = newList` on state | Assigned directly | `setList(newList)` |
+| UI doesn't update after `push`/`sort` on state | Mutated the existing array | Create a new array (`[...list]`, `filter`, `map`) |
+| Value is stale right after `setX` | State is a snapshot | Use the next render, or `setX(prev => ...)` |
+| Three `setCount(count + 1)` calls add only 1 | Same snapshot value each time | `setCount(c => c + 1)` |
+| Can't type in an input | `value` without `onChange` | Add `onChange` that sets state |
+| Second search returns nothing | Overwrote the only copy of the data | Keep source data; derive or store a separate view |
+| Duplicate-key or missing-key warning | Bad or absent `key` | Unique, stable `id` on the outermost mapped element |
+| `onClick` runs on render | `onClick={fn()}` | `onClick={fn}` or `onClick={() => fn(x)}` |
+
+### 21.2 Effects and fetching
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Effect runs "before" render | Misunderstood timing | Effects run **after** render |
+| Request fires endlessly | No dependency array, and the effect sets state | Add `[]` or correct dependencies |
+| Effect runs twice on load (development only) | React Strict Mode | Normal. Write a cleanup |
+| `async` effect warning | `useEffect(async () => ...)` | Inner async function |
+| 404 or 500 treated like success | `fetch` doesn't reject on HTTP errors | Check `response.ok` |
+| CORS error | Cross-origin request not allowed by the server | Server headers, dev-server proxy, or your own back-end |
+| `Cannot destructure property ... of null` | Reading data before it exists | Early return (placeholder) **before** destructuring |
+| Old response overwrites new one | Race condition | Abort or ignore stale responses in cleanup |
+| Data shape differs from the interface | API changed or fields optional | Inspect the response; optional chaining; update types |
+| `useEffect is not defined` | Missing named import | `import { useEffect } from "react"` |
+
+### 21.3 Hooks
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Invalid hook call` | Hook outside a component/hook, in a handler, loop, or condition; or duplicate React | Follow the Rules of Hooks; check for one React copy and matching versions |
+| `Rendered more/fewer hooks than during the previous render` | Hook after an early return or inside a condition | Call all hooks first |
+| Effect uses outdated values | Missing dependency | Add it; enable `exhaustive-deps` lint rule |
+
+### 21.4 Routing
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Blank page and *No routes matched location* | No match and no `*` route | Add a catch-all route |
+| `useNavigate() may be used only in the context of a <Router>` | Component outside the router | Render it inside `BrowserRouter` / `RouterProvider` |
+| `You cannot render a <Router> inside another <Router>` | Two routers | Keep exactly one |
+| Whole page reloads on navigation | `<a href>` | `Link` / `NavLink` with `to` |
+| Header vanishes on other pages | Pages are not children of a layout route | Layout route + `Outlet` |
+| Layout appears, content missing | No `<Outlet />` in the parent | Add `<Outlet />` |
+| Child route doesn't match | Absolute child path under a different parent | Use relative child paths |
+| Parent URL shows an empty area | No `index` route | Add an `index` route |
+| Home link always active | `/` is a prefix of every URL | `end` prop |
+| `useParams()` value is `undefined` | Name mismatch with `:param` | Make names identical |
+| Param compares unequal to a number | Params are strings | `Number(param)` |
+| `useRouteError` returns nothing useful / fails | Used outside a data-router error element | Use only in `errorElement` or fall back to an error boundary |
+| Calling `useNavigate()` in a click handler fails | Hook in a handler | Call the hook at the top; call the returned function in the handler |
+| Warning about navigating during render | `navigate()` in the render body | Use `<Navigate />` or an effect or handler |
+| Refresh on `/about` gives a server 404 after deploy | Host doesn't serve `index.html` for unknown paths | Configure the host's SPA fallback |
+| `RouterProvider` and `BrowserRouter` mixed | Incompatible configurations | Choose one |
+
+### 21.5 TypeScript
+
+| Symptom | Fix |
+|---|---|
+| `useState([])` infers `never[]` | `useState<Item[]>([])` |
+| `useState(null)` can't later hold data | `useState<Item \| null>(null)` |
+| `Object is possibly 'null'` | Narrow with an early return or optional chaining |
+| Event type errors | `ChangeEvent<HTMLInputElement>`, `KeyboardEvent<HTMLInputElement>` from `react` |
+| `useLoaderData` returns `unknown` | Cast to the loader's return type |
+| `location.state` is `unknown` | Cast or validate it, and handle `null` |
+
+---
+
+## 22. Practice Exercises
+
+Attempt each exercise before opening the solution in [Section 23](#23-exercise-solutions). Each is solved in a single `App.tsx` unless noted. For routing exercises, assume `BrowserRouter` is **not** already in `main.tsx` (or remove it from your solution if it is). The API used is `https://jsonplaceholder.typicode.com`.
+
+### Part A: State and rendering
+
+**Exercise 1: Normal variable vs. state**
+- *Task:* Build a counter with a plain `let` variable and a button. Confirm the UI doesn't update while `console.log` shows the value changing. Then convert it to `useState`.
+- *Learning objective:* Experience why state is needed.
+- *Expected behavior:* The broken version logs but never updates the screen; the fixed version updates.
+- *Constraints:* Show both versions on one page.
+
+**Exercise 2: Creating and updating state**
+- *Task:* Build a counter with **+**, **−**, and **Reset** buttons and a step size selector (1, 5, 10). Add an `onMouseOver` handler on the heading that logs a message.
+- *Learning objective:* Setter usage, updater functions, event handlers.
+- *Expected behavior:* The count changes by the chosen step; `Reset` returns to 0. Pressing + three times in one handler (as an experiment) adds three steps when you use the updater form.
+- *Constraints:* Use `setCount(c => ...)`. Don't mutate anything.
+
+**Exercise 3: Array destructuring**
+- *Task:* (a) Swap two variables using destructuring. (b) Write a custom hook `useCounter(initial)` that returns a typed tuple `[count, increment, decrement]`, and use it in a component.
+- *Learning objective:* Understand why `useState` returns an array.
+- *Expected behavior:* Swapped values print correctly; the counter works through destructured names of your choice.
+- *Constraints:* Annotate the tuple return type.
+
+**Exercise 4: Re-renders and reconciliation**
+- *Task:* Build a parent with a text input and two child components: one displays the typed text, the other is static. Log each render. Predict, then verify, which logs appear per keystroke. Then inspect the Elements panel to see which DOM nodes change.
+- *Learning objective:* Whole-component re-rendering vs. minimal DOM updates.
+- *Expected behavior:* Parent and both children log on each keystroke (default behavior), but only the input value and displayed text change in the DOM.
+- *Constraints:* Don't use `React.memo`.
+
+**Exercise 5: Search and the "overwritten list" bug**
+- *Task:* Using the book list from Section 4.11, add a search box and a **Search** button. First implement it the buggy way (filter the state and overwrite it), observe the bug, then fix it with a source list and a displayed list. Add the Enter key to trigger search and a "rating above 4.2" filter button.
+- *Learning objective:* Controlled inputs and not destroying source data.
+- *Expected behavior:* After searching "code" then "refactor", the second search still works. An empty search restores all books.
+- *Constraints:* Match case-insensitively with `includes`.
+
+### Part B: Effects and data fetching
+
+**Exercise 6: Compare the three dependency cases**
+- *Task:* Create a component with two state values and three effects: no array, `[]`, and one listing only the first state value. Click both buttons and note when each effect logs.
+- *Learning objective:* Predict effect timing.
+- *Expected behavior:* See the table in Section 10.2. Remember that Strict Mode doubles mount logs in development.
+- *Constraints:* Use `console.log` only.
+
+**Exercise 7: Fetch data with loading, success, and error states**
+- *Task:* Fetch `/posts?_limit=10` and display titles. Show a shimmer while loading and an error message with a **Retry** button on failure. Test the error state by breaking the URL.
+- *Learning objective:* Complete fetching pattern.
+- *Expected behavior:* Shimmer → list; broken URL → error and Retry.
+- *Constraints:* Check `response.ok`. Abort in cleanup. Initial status must be `"loading"`.
+
+**Exercise 8: Correct the effect mistakes**
+- *Task:* Fix this component. List every problem you find.
+
+```tsx
+import { useEffect, useState } from "react";
+
+export default function App() {
+  const [posts, setPosts] = useState([]);
+
+  useEffect(async () => {
+    const res = await fetch("https://jsonplaceholder.typicode.com/posts?_limit=5");
+    setPosts(await res.json());
+  });
+
+  return (
+    <ul>
+      {posts.map((p) => (
+        <li>{p.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+- *Learning objective:* Recognize common effect and typing errors.
+- *Expected behavior:* Five titles load once, with no console warnings.
+- *Constraints:* Keep it in one file.
+
+**Exercise 9: Apply the Rules of Hooks**
+- *Task:* Fix every Rules-of-Hooks violation and explain each.
+
+```tsx
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+export function Profile({ userId }: { userId: number | null }) {
+  if (userId === null) return <p>Please sign in.</p>;
+
+  const [editing, setEditing] = useState(false);
+
+  function goHome() {
+    const navigate = useNavigate();
+    navigate("/");
+  }
+
+  return (
+    <div>
+      <button onClick={() => setEditing(!editing)}>{editing ? "Done" : "Edit"}</button>
+      <button onClick={goHome}>Home</button>
+    </div>
+  );
+}
+```
+
+- *Learning objective:* Keep hook order stable and call hooks only at the top level.
+- *Expected behavior:* No hook-order errors; both buttons work (the component is rendered inside a router).
+- *Constraints:* Don't remove the early return. Move it.
+
+### Part C: Routing
+
+**Exercise 10: Configure declarative routes**
+- *Task:* Create Home, About, and Contact pages with `BrowserRouter`, `Routes`, `Route`, and `NavLink`. Add a Posts page and a dynamic `/posts/:postId` page that shows the id.
+- *Learning objective:* Route table, dynamic segments, `useParams`.
+- *Expected behavior:* Each URL shows the right page; links don't reload the page.
+- *Constraints:* One router. Navigation outside `Routes` so it persists.
+
+**Exercise 11: Navigate with `useNavigate`**
+- *Task:* Add a **Contact** form (name and message). On submit, prevent the default behavior and navigate to `/thanks`, passing the name via `state`. Add a **Back** button using `navigate(-1)`.
+- *Learning objective:* Programmatic navigation and Rules of Hooks with router hooks.
+- *Expected behavior:* The thanks page greets the user by name; refreshing it handles the missing state gracefully.
+- *Constraints:* Call `useNavigate` at the top of the component.
+
+**Exercise 12: Redirect with `Navigate`**
+- *Task:* Add a route `/home` that redirects to `/`. Add a protected `/account` page that redirects to `/login` when a boolean in state is false and returns the user to `/account` after login.
+- *Learning objective:* Redirect routes and route guards.
+- *Expected behavior:* `/home` becomes `/`. `/account` while logged out → `/login` → after login → `/account`.
+- *Constraints:* Use `replace`. Don't call `navigate()` during render.
+
+**Exercise 13: Custom not-found page**
+- *Task:* Add a `path="*"` route showing a 404 message with a link home. Visit three made-up URLs. Then remove the route and read the console warning.
+- *Learning objective:* Handling unmatched routes.
+- *Expected behavior:* 404 page appears for unknown URLs.
+- *Constraints:* Put the catch-all inside the layout so the nav stays.
+
+**Exercise 14: Compare declarative and data-router configuration**
+- *Task:* Convert the route table from Exercise 10 to `createBrowserRouter` + `RouterProvider`, keeping all pages. Add an `errorElement` that uses `useRouteError`. Write three sentences on what changed.
+- *Learning objective:* Compare the two APIs without mixing them.
+- *Expected behavior:* Same pages and URLs; unknown URLs show your error element.
+- *Constraints:* Don't render `BrowserRouter` in this version.
+
+**Exercise 15: Nested layouts with `Outlet`**
+- *Task:* Build a layout route with a persistent header and an `Outlet`. Add a nested `/dashboard` section with sub-pages `overview` and `reports` and its own tab links. `/dashboard` itself should redirect to `/dashboard/overview`.
+- *Learning objective:* Layout routes, index routes, relative paths.
+- *Expected behavior:* The header never disappears; the tabs switch only the inner area.
+- *Constraints:* Use relative child paths.
+
+### Part D: Stretch and review
+
+**Exercise 16: Modules**
+- *Task:* Create `utils/constants.ts` with two named exports and `utils/posts.ts` with a default export plus a named type export. Import both in `App.tsx`.
+- *Learning objective:* Default vs. named exports, relative paths.
+- *Expected behavior:* App renders using both.
+- *Constraints:* Don't use hard-coded strings in `App.tsx`.
+
+**Exercise 17: Grouped, collapsible list**
+- *Task:* Given items grouped by category (with a `vegetarian` boolean), render every category as a collapsible section and add a "vegetarian only" checkbox.
+- *Learning objective:* Combine lists, keys, state, and derived data.
+- *Expected behavior:* Clicking a category toggles its items; the checkbox hides non-vegetarian items.
+- *Constraints:* Derive the filtered data during render.
+
+**Exercise 18: Explain it**
+- *Task:* In 4-5 sentences, explain why typing in a controlled input re-renders the component but the page stays fast.
+- *Learning objective:* Articulate reconciliation clearly.
+- *Expected behavior:* Your answer mentions state changes, re-render, new element tree, diff, and minimal DOM updates.
+
+---
+
+## 23. Exercise Solutions
+
+Solutions are one possible answer. Yours may differ and still be correct.
+
+### Solution 1: Normal variable vs. state
+
+```tsx
+import { useState } from "react";
+
+function Broken() {
+  let count = 0;
+  return (
+    <div>
+      <p>Broken count: {count}</p>
+      <button
+        onClick={() => {
+          count += 1;
+          console.log("broken count is", count); // changes, but the screen doesn't
+        }}
+      >
+        +1 (broken)
+      </button>
+    </div>
+  );
+}
+
+function Fixed() {
+  const [count, setCount] = useState(0);
+  return (
+    <div>
+      <p>Fixed count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>+1 (state)</button>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <>
+      <Broken />
+      <Fixed />
+    </>
+  );
+}
+```
+
+*Why:* `Broken` changes a variable React can't observe, and re-running the function would reset it anyway. `Fixed` stores the value in React and the setter triggers a re-render.
+
+### Solution 2: Creating and updating state
+
+```tsx
+import { useState } from "react";
+
+export default function App() {
+  const [count, setCount] = useState(0);
+  const [step, setStep] = useState(1);
+
+  return (
+    <div>
+      <h1 onMouseOver={() => console.log("Hovering over the heading")}>Count: {count}</h1>
+
+      <label>
+        Step:{" "}
+        <select value={step} onChange={(e) => setStep(Number(e.target.value))}>
+          <option value={1}>1</option>
+          <option value={5}>5</option>
+          <option value={10}>10</option>
+        </select>
+      </label>
+
+      <div>
+        <button onClick={() => setCount((c) => c + step)}>+</button>
+        <button onClick={() => setCount((c) => c - step)}>-</button>
+        <button onClick={() => setCount(0)}>Reset</button>
+        <button
+          onClick={() => {
+            // Updater form: each call sees the latest value, so this adds 3 steps
+            setCount((c) => c + step);
+            setCount((c) => c + step);
+            setCount((c) => c + step);
+          }}
+        >
+          Add 3 steps
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+*Note:* `e.target.value` is always a string, hence `Number(...)`. With `setCount(count + step)` three times, only one step would be added, because `count` is a snapshot.
+
+### Solution 3: Array destructuring
+
+```tsx
+import { useState } from "react";
+
+function useCounter(initial = 0): [number, () => void, () => void] {
+  const [count, setCount] = useState(initial);
+  const increment = () => setCount((c) => c + 1);
+  const decrement = () => setCount((c) => c - 1);
+  return [count, increment, decrement];
+}
+
+export default function App() {
+  // (a) swapping with destructuring
+  let a = 1;
+  let b = 2;
+  [a, b] = [b, a];
+
+  // (b) destructuring a tuple with names of our choice
+  const [likes, addLike, removeLike] = useCounter(10);
+
+  return (
+    <div>
+      <p>
+        After swap: a = {a}, b = {b}
+      </p>
+      <p>Likes: {likes}</p>
+      <button onClick={addLike}>Like</button>
+      <button onClick={removeLike}>Unlike</button>
+    </div>
+  );
+}
+```
+
+### Solution 4: Re-renders and reconciliation
+
+```tsx
+import { useState } from "react";
+
+function TextDisplay({ text }: { text: string }) {
+  console.log("TextDisplay rendered");
+  return <p>You typed: {text}</p>;
+}
+
+function StaticNote() {
+  console.log("StaticNote rendered");
+  return <p>This note never changes.</p>;
+}
+
+export default function App() {
+  const [text, setText] = useState("");
+  console.log("App rendered");
+
+  return (
+    <div>
+      <input value={text} onChange={(e) => setText(e.target.value)} />
+      <TextDisplay text={text} />
+      <StaticNote />
+    </div>
+  );
+}
+```
+
+*Answer:* all three log on every keystroke (children re-render when the parent does). In the Elements panel only the input's `value` and the `TextDisplay` text node change. React diffed the new tree against the old and committed only the differences.
+
+### Solution 5: Search and the overwritten-list bug
+
+*The buggy version* filtered the same state it then overwrote:
+
+```tsx
+setBooks(books.filter((b) => b.title.toLowerCase().includes(searchText.toLowerCase())));
+```
+
+*The fix:*
+
+```tsx
+import { useState } from "react";
+import type { KeyboardEvent } from "react";
+
+interface Book {
+  id: number;
+  title: string;
+  rating: number;
+}
+
+const INITIAL_BOOKS: Book[] = [
+  { id: 1, title: "The Pragmatic Programmer", rating: 4.6 },
+  { id: 2, title: "Clean Code", rating: 4.2 },
+  { id: 3, title: "Refactoring", rating: 4.4 },
+  { id: 4, title: "Code Complete", rating: 3.9 },
+  { id: 5, title: "Peopleware", rating: 3.8 },
+];
+
+export default function App() {
+  const [allBooks] = useState<Book[]>(INITIAL_BOOKS); // never filtered
+  const [visibleBooks, setVisibleBooks] = useState<Book[]>(INITIAL_BOOKS);
+  const [searchText, setSearchText] = useState("");
+
+  function search() {
+    const term = searchText.toLowerCase();
+    setVisibleBooks(allBooks.filter((b) => b.title.toLowerCase().includes(term)));
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") search();
+  }
+
+  return (
+    <div>
+      <input
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+      <button onClick={search}>Search</button>
+      <button onClick={() => setVisibleBooks(allBooks.filter((b) => b.rating > 4.2))}>
+        Rating above 4.2
+      </button>
+
+      <ul>
+        {visibleBooks.map((b) => (
+          <li key={b.id}>
+            {b.title} ({b.rating})
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+*Check:* "code" gives Clean Code and Code Complete; then "refactor" gives Refactoring. Rating above 4.2 leaves Pragmatic Programmer (4.6) and Refactoring (4.4). Clean Code (4.2) is excluded because the test is strictly greater.
+
+### Solution 6: Compare the three dependency cases
+
+```tsx
+import { useEffect, useState } from "react";
+
+export default function App() {
+  const [first, setFirst] = useState(0);
+  const [second, setSecond] = useState(0);
+
+  console.log("--- render ---");
+
+  useEffect(() => {
+    console.log("A: no array");
+  });
+
+  useEffect(() => {
+    console.log("B: empty array");
+  }, []);
+
+  useEffect(() => {
+    console.log("C: [first]");
+  }, [first]);
+
+  return (
+    <div>
+      <button onClick={() => setFirst(first + 1)}>first: {first}</button>
+      <button onClick={() => setSecond(second + 1)}>second: {second}</button>
+    </div>
+  );
+}
+```
+
+| Action | A | B | C |
+|---|---|---|---|
+| Load | runs | runs | runs |
+| Click `first` | runs | no | runs |
+| Click `second` | runs | no | no |
+
+### Solution 7: Loading, success, and error
+
+```tsx
+import { useEffect, useState } from "react";
+
+interface Post {
+  id: number;
+  title: string;
+}
+
+type State =
+  | { status: "loading" }
+  | { status: "success"; posts: Post[] }
+  | { status: "error"; message: string };
+
+const URL = "https://jsonplaceholder.typicode.com/posts?_limit=10";
+
+export default function App() {
+  const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ status: "loading" });
+
+    async function load() {
+      try {
+        const response = await fetch(URL, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Status ${response.status}`);
+        const posts: Post[] = await response.json();
+        setState({ status: "success", posts });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    load();
+    return () => controller.abort();
+  }, [attempt]);
+
+  if (state.status === "loading") {
+    return (
+      <div>
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} style={{ height: 16, margin: "10px 0", background: "#e5e7eb" }} />
+        ))}
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div>
+        <p>Something went wrong: {state.message}</p>
+        <button onClick={() => setAttempt((a) => a + 1)}>Retry</button>
+      </div>
+    );
+  }
+
+  return (
+    <ul>
+      {state.posts.map((p) => (
+        <li key={p.id}>{p.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+*To test the error state:* change `posts` to `postz` in the URL. You'll get `Status 404`.
+
+### Solution 8: Correct the effect mistakes
+
+Problems found:
+
+1. `useEffect(async () => ...)`: the callback returns a Promise, but an effect may return only a cleanup function.
+2. **No dependency array:** the effect runs after every render, and `setPosts` causes a render, so it loops forever.
+3. `useState([])` is typed `never[]`; `p.title` is a type error. Provide a type.
+4. Missing `key` on `<li>`.
+5. No `response.ok` check, no loading state, no error handling, and no cleanup.
+
+```tsx
+import { useEffect, useState } from "react";
+
+interface Post {
+  id: number;
+  title: string;
+}
+
+export default function App() {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function load() {
+      try {
+        const res = await fetch("https://jsonplaceholder.typicode.com/posts?_limit=5", {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        setPosts(await res.json());
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setError(e instanceof Error ? e.message : "Unknown error");
+      }
+    }
+
+    load();
+    return () => controller.abort();
+  }, []); // one request after the first render
+
+  if (error) return <p>Error: {error}</p>;
+  if (posts.length === 0) return <p>Loading...</p>;
+
+  return (
+    <ul>
+      {posts.map((p) => (
+        <li key={p.id}>{p.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Solution 9: Apply the Rules of Hooks
+
+Violations: (1) `useState` appears **after** an early return, so it's skipped on some renders; (2) `useNavigate()` is called **inside an event handler**.
+
+```tsx
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+export function Profile({ userId }: { userId: number | null }) {
+  // All hooks first, at the top level
+  const [editing, setEditing] = useState(false);
+  const navigate = useNavigate();
+
+  function goHome() {
+    navigate("/"); // call the returned function, not the hook
+  }
+
+  // The early return now comes after every hook
+  if (userId === null) return <p>Please sign in.</p>;
+
+  return (
+    <div>
+      <button onClick={() => setEditing(!editing)}>{editing ? "Done" : "Edit"}</button>
+      <button onClick={goHome}>Home</button>
+    </div>
+  );
+}
+```
+
+### Solution 10: Declarative routes
+
+```tsx
+import { BrowserRouter, NavLink, Route, Routes, useParams } from "react-router-dom";
+
+const linkStyle = ({ isActive }: { isActive: boolean }) => ({
+  marginRight: 12,
+  fontWeight: isActive ? "bold" : "normal",
+});
+
+const Home = () => <h1>Home</h1>;
+const About = () => <h1>About</h1>;
+const Contact = () => <h1>Contact</h1>;
+
+function Posts() {
+  return (
+    <div>
+      <h1>Posts</h1>
+      <ul>
+        {[1, 2, 3].map((id) => (
+          <li key={id}>
+            <NavLink to={`/posts/${id}`}>Post {id}</NavLink>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PostDetail() {
+  const { postId } = useParams<{ postId: string }>();
+  return <h1>Post number {postId}</h1>;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <nav>
+        <NavLink to="/" end style={linkStyle}>Home</NavLink>
+        <NavLink to="/about" style={linkStyle}>About</NavLink>
+        <NavLink to="/contact" style={linkStyle}>Contact</NavLink>
+        <NavLink to="/posts" style={linkStyle}>Posts</NavLink>
+      </nav>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/posts" element={<Posts />} />
+        <Route path="/posts/:postId" element={<PostDetail />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+### Solution 11: Navigate with `useNavigate`
+
+```tsx
+import { useState } from "react";
+import type { FormEvent } from "react";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+
+function Contact() {
+  const navigate = useNavigate(); // hook at the top
+  const [name, setName] = useState("");
+  const [message, setMessage] = useState("");
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); // stop the browser's page reload
+    navigate("/thanks", { state: { name } });
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <h1>Contact</h1>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required />
+      <br />
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Message"
+      />
+      <br />
+      <button type="submit">Send</button>
+      <button type="button" onClick={() => navigate(-1)}>Back</button>
+    </form>
+  );
+}
+
+function Thanks() {
+  const location = useLocation();
+  const name = (location.state as { name?: string } | null)?.name;
+  return <h1>{name ? `Thanks, ${name}!` : "Thanks!"}</h1>;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Contact />} />
+        <Route path="/thanks" element={<Thanks />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+### Solution 12: Redirect with `Navigate`
+
+```tsx
+import { useState } from "react";
+import type { ReactNode } from "react";
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+
+function Guard({ allowed, children }: { allowed: boolean; children: ReactNode }) {
+  const location = useLocation();
+  if (!allowed) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  return <>{children}</>;
+}
+
+function Login({ onLogin }: { onLogin: () => void }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from ?? "/account";
+
+  return (
+    <div>
+      <h1>Login</h1>
+      <button
+        onClick={() => {
+          onLogin();
+          navigate(from, { replace: true });
+        }}
+      >
+        Log in
+      </button>
+    </div>
+  );
+}
+
+export default function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  return (
+    <BrowserRouter>
+      <nav>
+        <Link to="/">Home</Link> | <Link to="/account">Account</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<h1>Home</h1>} />
+        <Route path="/home" element={<Navigate to="/" replace />} />
+        <Route path="/login" element={<Login onLogin={() => setLoggedIn(true)} />} />
+        <Route
+          path="/account"
+          element={
+            <Guard allowed={loggedIn}>
+              <h1>Account</h1>
+            </Guard>
+          }
+        />
+        <Route path="*" element={<h1>Not found</h1>} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+### Solution 13: Custom not-found page
+
+```tsx
+import { BrowserRouter, Link, NavLink, Outlet, Route, Routes } from "react-router-dom";
+
+function Layout() {
+  return (
+    <div>
+      <nav>
+        <NavLink to="/" end>Home</NavLink> <NavLink to="/about">About</NavLink>
+      </nav>
+      <Outlet />
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div>
+      <h1>404: Page not found</h1>
+      <Link to="/">Go home</Link>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<h1>Home</h1>} />
+          <Route path="about" element={<h1>About</h1>} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+*Without the `*` route,* an unknown URL shows the layout with an empty area (or nothing at all for a flat route table), and the console warns *No routes matched location*.
+
+### Solution 14: Declarative vs. data router
+
+```tsx
+import {
+  Link,
+  NavLink,
+  Outlet,
+  RouterProvider,
+  createBrowserRouter,
+  isRouteErrorResponse,
+  useParams,
+  useRouteError,
+} from "react-router-dom";
+
+const linkStyle = ({ isActive }: { isActive: boolean }) => ({
+  marginRight: 12,
+  fontWeight: isActive ? "bold" : "normal",
+});
+
+function Layout() {
+  return (
+    <div>
+      <nav>
+        <NavLink to="/" end style={linkStyle}>Home</NavLink>
+        <NavLink to="/about" style={linkStyle}>About</NavLink>
+        <NavLink to="/contact" style={linkStyle}>Contact</NavLink>
+        <NavLink to="/posts" style={linkStyle}>Posts</NavLink>
+      </nav>
+      <Outlet />
+    </div>
+  );
+}
+
+function PostDetail() {
+  const { postId } = useParams<{ postId: string }>();
+  return <h1>Post number {postId}</h1>;
+}
+
+function ErrorPage() {
+  const error = useRouteError();
+  const text = isRouteErrorResponse(error)
+    ? `${error.status}: ${error.statusText}`
+    : error instanceof Error
+    ? error.message
+    : "Unknown error";
+  return (
+    <div>
+      <h1>Oops!</h1>
+      <p>{text}</p>
+      <Link to="/">Home</Link>
+    </div>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,
+    errorElement: <ErrorPage />,
+    children: [
+      { index: true, element: <h1>Home</h1> },
+      { path: "about", element: <h1>About</h1> },
+      { path: "contact", element: <h1>Contact</h1> },
+      {
+        path: "posts",
+        element: (
+          <ul>
+            {[1, 2, 3].map((id) => (
+              <li key={id}>
+                <Link to={`/posts/${id}`}>Post {id}</Link>
+              </li>
+            ))}
+          </ul>
+        ),
+      },
+      { path: "posts/:postId", element: <PostDetail /> },
+    ],
+  },
+]);
+
+export default function App() {
+  return <RouterProvider router={router} />;
+}
+```
+
+*What changed:* (1) `BrowserRouter` + `Routes` became `RouterProvider` + `createBrowserRouter`; (2) JSX `<Route>` elements became an array of route objects with `children`; (3) unknown URLs now reach an `errorElement` that can use `useRouteError`, whereas the declarative version needed a `*` route. `Link`, `NavLink`, `Outlet`, and `useParams` are unchanged.
+
+### Solution 15: Nested layouts with `Outlet`
+
+```tsx
+import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from "react-router-dom";
+
+const linkStyle = ({ isActive }: { isActive: boolean }) => ({
+  marginRight: 12,
+  fontWeight: isActive ? "bold" : "normal",
+});
+
+function AppLayout() {
+  return (
+    <div>
+      <header>
+        <NavLink to="/" end style={linkStyle}>Home</NavLink>
+        <NavLink to="/dashboard" style={linkStyle}>Dashboard</NavLink>
+      </header>
+      <hr />
+      <Outlet />
+    </div>
+  );
+}
+
+function DashboardLayout() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <nav>
+        <NavLink to="overview" style={linkStyle}>Overview</NavLink>
+        <NavLink to="reports" style={linkStyle}>Reports</NavLink>
+      </nav>
+      <Outlet />
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<h2>Home</h2>} />
+          <Route path="dashboard" element={<DashboardLayout />}>
+            <Route index element={<Navigate to="overview" replace />} />
+            <Route path="overview" element={<p>Overview content</p>} />
+            <Route path="reports" element={<p>Reports content</p>} />
+          </Route>
+          <Route path="*" element={<h2>404</h2>} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+### Solution 16: Modules
+
+`src/utils/constants.ts`
+
+```ts
+export const PAGE_TITLE = "Posts";
+export const EMPTY_MESSAGE = "No posts yet.";
+```
+
+`src/utils/posts.ts`
+
+```ts
+export interface Post {
+  id: number;
+  title: string;
+}
+
+const posts: Post[] = [
+  { id: 1, title: "Hello React" },
+  { id: 2, title: "Understanding state" },
+];
+
+export default posts;
+```
+
+`src/App.tsx`
+
+```tsx
+import posts, { type Post } from "./utils/posts";
+import { EMPTY_MESSAGE, PAGE_TITLE } from "./utils/constants";
+
+export default function App() {
+  const list: Post[] = posts;
+  return (
+    <div>
+      <h1>{PAGE_TITLE}</h1>
+      {list.length === 0 && <p>{EMPTY_MESSAGE}</p>}
+      <ul>
+        {list.map((p) => (
+          <li key={p.id}>{p.title}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### Solution 17: Grouped, collapsible list
+
+```tsx
+import { useState } from "react";
+
+interface Item {
+  id: number;
+  name: string;
+  vegetarian: boolean;
+}
+
+interface Category {
+  id: number;
+  title: string;
+  items: Item[];
+}
+
+const CATEGORIES: Category[] = [
+  {
+    id: 1,
+    title: "Starters",
+    items: [
+      { id: 11, name: "Spring rolls", vegetarian: true },
+      { id: 12, name: "Chicken wings", vegetarian: false },
+    ],
+  },
+  {
+    id: 2,
+    title: "Mains",
+    items: [
+      { id: 21, name: "Paneer curry", vegetarian: true },
+      { id: 22, name: "Beef stew", vegetarian: false },
+      { id: 23, name: "Lentil soup", vegetarian: true },
+    ],
+  },
+];
+
+export default function App() {
+  const [vegOnly, setVegOnly] = useState(false);
+  const [openIds, setOpenIds] = useState<number[]>([1]); // categories that are expanded
+
+  function toggle(id: number) {
+    setOpenIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  }
+
+  // Derived during render: nothing extra to keep in sync
+  const visible = CATEGORIES.map((c) => ({
+    ...c,
+    items: vegOnly ? c.items.filter((i) => i.vegetarian) : c.items,
+  }));
+
+  return (
+    <div>
+      <label>
+        <input type="checkbox" checked={vegOnly} onChange={(e) => setVegOnly(e.target.checked)} />{" "}
+        Vegetarian only
+      </label>
+
+      {visible.map((category) => (
+        <section key={category.id}>
+          <h2 onClick={() => toggle(category.id)} style={{ cursor: "pointer" }}>
+            {openIds.includes(category.id) ? "▼" : "▶"} {category.title} ({category.items.length})
+          </h2>
+          {openIds.includes(category.id) && (
+            <ul>
+              {category.items.map((item) => (
+                <li key={item.id}>{item.name}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+```
+
+### Solution 18: Explain it
+
+> Typing in a controlled input calls a state setter on every keystroke, so React re-runs the component function and produces a new element tree. React diffs that tree against the previous one and finds that only the input's value (and any text that displays it) differs. During the commit phase it updates just those pieces of the real DOM and leaves everything else alone. The whole function runs again, but cheap JavaScript objects are compared and the expensive DOM work stays minimal. That's why the page stays fast.
+
+---
+
+## 24. Key Takeaways
+
+**State and rendering**
+
+- The UI is a function of data. Change the data and React updates the UI.
+- A normal variable can't update the UI: React doesn't watch it, and it's recreated on each render.
+- `useState` returns `[value, setter]`. Change state **only** through the setter, and never mutate arrays or objects.
+- State is a snapshot per render. Use updater functions when the next value depends on the previous.
+- A state change re-renders the component (it calls the function again). React diffs the new element tree against the old and updates **only the changed DOM**. Fiber (React 16+) is the reconciliation implementation.
+- Don't overwrite your only copy of data when filtering. Keep a source and derive the view.
+- `const [a, b] = useState(...)` is ordinary array destructuring.
+
+**Effects and data**
+
+- React apps **render first and fetch after**: placeholder, effect, state update, real content.
+- `useEffect` runs **after** render. No array: every render. `[]`: once. `[x]`: when `x` changes.
+- `fetch` is a browser API. It doesn't reject on HTTP errors, so check `response.ok`.
+- Handle loading, success, and error. Clean up with `AbortController`.
+- CORS is a browser rule. A browser extension is only a local workaround.
+- Check "no data yet" with an early return **before** reading nested data.
+
+**Hooks**
+
+- Call hooks at the top level of components or custom hooks, in the same order every render. No hooks in conditions, loops, handlers, or after early returns.
+- `useNavigate()` is a hook. The function it returns can be called in handlers.
+
+**Routing**
+
+- Pages are components. A router maps URLs to components. React apps use client-side routing, so there is no page reload.
+- Declarative routing: `BrowserRouter` + `Routes` + `Route`. `path="*"` handles not-found. `:param` + `useParams` handles dynamic URLs.
+- `useNavigate` navigates from logic. `Navigate` redirects when rendered. `Link`/`NavLink` navigate from visible links.
+- Layout routes use `Outlet`. Child paths are relative; `index` routes are defaults.
+- The data router (`createBrowserRouter` + `RouterProvider`) is the same library with route objects, `errorElement`/`useRouteError`, and loaders/actions. **Never mix the two configurations.**
+
+---
+
+## 25. Glossary
+
+| Term | Definition |
+|---|---|
+| **Action** | A data-router function that handles a route's mutations (such as form submissions) |
+| **Actual DOM** | The browser's real tree of page elements |
+| **API / endpoint** | A set of URLs a program can call for data; one such URL is an endpoint |
+| **Array destructuring** | JavaScript syntax that unpacks array items into variables |
+| **`AbortController`** | Browser object that cancels in-flight `fetch` requests |
+| **`async`/`await`** | Syntax for working with promises in sequence |
+| **Callback function** | A function passed to another function to be called later |
+| **Child route** | A route nested inside a parent route |
+| **Client-side routing** | Navigation handled in the browser by swapping components |
+| **Conditional rendering** | Rendering different UI depending on a condition |
+| **Config-driven UI** | A UI whose content is determined by data from a server or configuration |
+| **Controlled input** | An input whose value is held in React state |
+| **CORS** | Browser rule restricting cross-origin reads unless the server allows them |
+| **Custom hook** | A function starting with `use` that calls other hooks |
+| **Declarative routing** | Defining routes with JSX (`Routes`/`Route`) |
+| **Dependency array** | Second argument of `useEffect` that controls when it re-runs |
+| **Diff algorithm** | Comparison of the old and new element trees to find changes |
+| **Dynamic route** | Route with a variable segment, such as `/users/:userId` |
+| **Early return** | Returning from a function before the rest of its code runs |
+| **Effect** | Code run by `useEffect` after render to synchronize with something external |
+| **Error boundary** | A class component that catches rendering errors in its subtree |
+| **`errorElement`** | Data-router route property: what to render on error |
+| **Event handler** | A function that runs in response to an event |
+| **Fiber** | React's reconciliation implementation, introduced in React 16 |
+| **Hook** | A React function (named `use...`) that adds features to components |
+| **Index route** | The default child route when the URL matches the parent exactly |
+| **JSON** | Text format for structured data |
+| **Layout route** | A parent route that renders shared UI and an `Outlet` |
+| **Loader** | A data-router function that loads data before a route renders |
+| **Mock data** | Fake data used during development |
+| **Named export** | One of many exports from a module (`export const X`) |
+| **Default export** | The single main export of a module (`export default X`) |
+| **Optional chaining (`?.`)** | Safe property access that yields `undefined` instead of throwing |
+| **`Outlet`** | Where a parent route renders its matching child |
+| **Reconciliation** | The process of diffing trees and updating the real DOM |
+| **Re-render** | React calling a component function again after a change |
+| **Route** | A mapping from a URL pattern to an element |
+| **Route parameter** | The value of a dynamic URL segment (always a string) |
+| **Rules of Hooks** | Only call hooks at the top level of components or custom hooks |
+| **Setter function** | The function returned by `useState` for updating state |
+| **Shimmer / skeleton UI** | A placeholder layout shown while data loads |
+| **Single-page application (SPA)** | An app loaded once that swaps components instead of loading new pages |
+| **State variable** | A value remembered by React, whose change via its setter triggers a re-render |
+| **State snapshot** | The fixed value of state seen during one particular render |
+| **Strict Mode** | A development mode that double-invokes some code to reveal bugs |
+| **Virtual DOM** | An in-memory JavaScript representation of the UI used for diffing |
+
+---
+
+## 26. Official References
+
+The links below were selected from the official documentation. Use the documentation version that matches your installed React and React Router versions.
+
+**React**
+
+- React documentation: https://react.dev/
+- `useState`: https://react.dev/reference/react/useState
+- `useEffect`: https://react.dev/reference/react/useEffect
+- Rules of Hooks: https://react.dev/reference/rules/rules-of-hooks
+- Render and Commit: https://react.dev/learn/render-and-commit
+- State as a Snapshot: https://react.dev/learn/state-as-a-snapshot
+- Synchronizing with Effects: https://react.dev/learn/synchronizing-with-effects
+- You Might Not Need an Effect: https://react.dev/learn/you-might-not-need-an-effect
+- Responding to Events: https://react.dev/learn/responding-to-events
+- Updating Objects and Arrays in State: https://react.dev/learn/updating-objects-in-state
+
+**React Router**
+
+- React Router: https://reactrouter.com/
+- `Routes`: https://reactrouter.com/api/components/Routes
+- `Route`: https://reactrouter.com/api/components/Route
+- `useNavigate`: https://reactrouter.com/api/hooks/useNavigate
+- `Navigate`: https://reactrouter.com/api/components/Navigate
+- `Outlet`: https://reactrouter.com/api/components/Outlet
+- `createBrowserRouter`: https://reactrouter.com/api/data-routers/createBrowserRouter
+- `RouterProvider`: https://reactrouter.com/api/data-routers/RouterProvider
+- `useRouteError`: https://reactrouter.com/api/hooks/useRouteError
+
+**MDN**
+
+- Array destructuring: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring
+- Fetch API: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
+- CORS: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
+- HTTP response status codes: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+- Optional chaining: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Optional_chaining
+
+**Further reading (advanced)**
+
+- React Fiber Architecture (React team member Andrew Clark's write-up): the `acdlite/react-fiber-architecture` repository on GitHub.
+
+> **Verification note:** These notes were written without live lookups of external documentation. React Router in particular has changed across versions (v6.4 and v7), so confirm API details and URLs against the documentation for the version installed in your project.
